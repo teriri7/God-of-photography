@@ -1,4 +1,4 @@
-﻿import React, { useRef } from 'react';
+import React, { useRef } from 'react';
 import { Sparkles, ImagePlus, ChevronDown, Ratio, Maximize2, Cpu } from 'lucide-react';
 
 interface ControlBarProps {
@@ -7,16 +7,21 @@ interface ControlBarProps {
   onChangeModel: (model: string) => void;
   aspectRatio: string;
   onChangeAspectRatio: (ratio: string) => void;
-  resolution: string;
-  onChangeResolution: (res: string) => void;
+  resolutionMode: '1K' | '2K' | '4K';
+  onChangeResolutionMode: (mode: '1K' | '2K' | '4K') => void;
   onPickImage: () => void;
   onStartGeneration: () => void;
   isGenerating: boolean;
   hasInputImage: boolean;
+  autoDetectedRatio?: string | null;
 }
 
-const ASPECT_RATIOS = ['1:1', '9:16', '16:9', '3:4', '4:3'];
-const RESOLUTIONS = ['1024x1024', '1024x1536', '1536x1024', '768x768'];
+const ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'];
+const RESOLUTION_OPTIONS: Array<{ value: '1K' | '2K' | '4K'; label: string }> = [
+  { value: '1K', label: '1K' },
+  { value: '2K', label: '2K' },
+  { value: '4K', label: '4K' },
+];
 
 export const ControlBar: React.FC<ControlBarProps> = ({
   models,
@@ -24,12 +29,13 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   onChangeModel,
   aspectRatio,
   onChangeAspectRatio,
-  resolution,
-  onChangeResolution,
+  resolutionMode,
+  onChangeResolutionMode,
   onPickImage,
   onStartGeneration,
   isGenerating,
   hasInputImage,
+  autoDetectedRatio,
 }) => {
   return (
     <div className="w-full px-3 py-3 space-y-3 glass-panel border-t border-pink-200/60 shadow-lg">
@@ -58,43 +64,59 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         </div>
 
         {/* 画面比例与分辨率快捷 Pill */}
-        <div className="flex items-center justify-between space-x-2 pt-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
           {/* 画面比例 */}
           <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar py-0.5">
-            <span className="text-[10px] text-slate-500 font-medium shrink-0 flex items-center mr-1">
+            <span className="text-[10px] text-slate-500 font-medium shrink-0 flex items-center mr-0.5">
               <Ratio className="w-3 h-3 text-pink-500 mr-0.5" /> 比例:
             </span>
-            {ASPECT_RATIOS.map((ratio) => (
-              <button
-                key={ratio}
-                onClick={() => onChangeAspectRatio(ratio)}
-                className={`px-2 py-0.8 rounded-lg text-[10px] font-semibold transition-all ${
-                  aspectRatio === ratio
-                    ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
-                    : 'bg-white/70 hover:bg-pink-100 text-slate-600 border border-pink-100'
-                }`}
-              >
-                {ratio}
-              </button>
-            ))}
+            {ASPECT_RATIOS.map((ratio) => {
+              const isSelected = aspectRatio === ratio;
+              const isAuto = autoDetectedRatio === ratio;
+              return (
+                <button
+                  key={ratio}
+                  onClick={() => onChangeAspectRatio(ratio)}
+                  className={`relative px-2 py-1 rounded-lg text-[10px] font-semibold shrink-0 transition-all ${
+                    isSelected
+                      ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
+                      : 'bg-white/70 hover:bg-pink-100 text-slate-600 border border-pink-100'
+                  }`}
+                >
+                  {ratio}
+                  {isAuto && (
+                    <span className="ml-1 text-[8px] bg-pink-100/90 text-pink-600 px-1 rounded-full font-bold">
+                      原图
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          {/* 分辨率 */}
+          {/* 分辨率 1K / 2K / 4K 模式 */}
           <div className="flex items-center space-x-1 shrink-0">
-            <span className="text-[10px] text-slate-500 font-medium flex items-center">
-              <Maximize2 className="w-3 h-3 text-pink-500 mr-0.5" />
+            <span className="text-[10px] text-slate-500 font-medium flex items-center mr-1">
+              <Maximize2 className="w-3 h-3 text-pink-500 mr-0.5" /> 分辨率:
             </span>
-            <select
-              value={resolution}
-              onChange={(e) => onChangeResolution(e.target.value)}
-              className="glass-input text-[10px] font-mono px-2 py-0.8 rounded-lg text-slate-700 outline-none"
-            >
-              {RESOLUTIONS.map((res) => (
-                <option key={res} value={res}>
-                  {res}
-                </option>
+            <div className="flex bg-pink-100/60 p-0.5 rounded-lg border border-pink-200/50">
+              {RESOLUTION_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => onChangeResolutionMode(opt.value)}
+                  className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all ${
+                    resolutionMode === opt.value
+                      ? 'bg-white text-pink-600 shadow-xs'
+                      : 'text-slate-600 hover:text-pink-600'
+                  }`}
+                >
+                  {opt.label}
+                  {opt.value === '4K' && (
+                    <span className="ml-0.5 text-[8px] text-amber-500 font-extrabold">★</span>
+                  )}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-﻿export interface LayerFilterSettings {
+export interface LayerFilterSettings {
   // 一级调色
   temperature: number;   // -100 ~ 100 (冷/暖)
   tint: number;          // -100 ~ 100 (品红/绿)
@@ -51,6 +51,8 @@ export interface PromptPreset {
   prompt: string;
   iconName: string;
 }
+
+export type ResolutionMode = '1K' | '2K' | '4K';
 
 export interface ResolutionOption {
   label: string;

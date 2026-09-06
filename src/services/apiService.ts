@@ -1,4 +1,4 @@
-﻿export interface ImageGenParams {
+export interface ImageGenParams {
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -52,7 +52,7 @@ export const apiService = {
     const cleanUrl = baseUrl.trim().replace(/\/+$/, '');
     const cleanKey = apiKey.trim();
 
-    const fullPrompt = `${prompt} [Requirements: Resolution ${resolution}, Aspect Ratio ${aspectRatio}, preserve key subject and enhance composition and aesthetics]. Please output the generated image directly.`;
+    const fullPrompt = `${prompt} [Parameters: Aspect Ratio ${aspectRatio}, Target Resolution ${resolution}]. Output high quality, crisp details, strictly adhering to the specified ${aspectRatio} aspect ratio and ${resolution} resolution. Please output the generated image directly.`;
 
     // 优先尝试多模态 Chat Completions（NewAPI 的 gemini-*-image / gpt-image-2 普遍规范）
     try {

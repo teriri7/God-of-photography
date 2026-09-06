@@ -1,8 +1,9 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Layer, LayerFilterSettings, DEFAULT_FILTER_SETTINGS, ApiConfig, PromptPreset } from './types';
 import { storageService } from './services/storageService';
 import { apiService } from './services/apiService';
 import { exportCompositeImage, loadImage } from './utils/canvasRenderer';
+import { detectClosestAspectRatio, calculateDimensions, ResolutionMode } from './utils/ratioHelper';
 
 import { Header } from './components/Header';
 import { CanvasViewport } from './components/CanvasViewport';
@@ -24,7 +25,8 @@ export const App: React.FC = () => {
   const [selectedPresetId, setSelectedPresetId] = useState<string>(presets[0]?.id || 'preset-anime');
   const [customPrompt, setCustomPrompt] = useState<string>('');
   const [aspectRatio, setAspectRatio] = useState<string>('1:1');
-  const [resolution, setResolution] = useState<string>('1024x1024');
+  const [autoDetectedRatio, setAutoDetectedRatio] = useState<string | null>(null);
+  const [resolutionMode, setResolutionMode] = useState<ResolutionMode>('2K');
 
   // 3. 图层系统状态
   const [layers, setLayers] = useState<Layer[]>([]);
@@ -84,6 +86,10 @@ export const App: React.FC = () => {
         const dataUrl = event.target?.result as string;
         const img = await loadImage(dataUrl);
 
+        const detectedRatio = detectClosestAspectRatio(img.width, img.height);
+        setAspectRatio(detectedRatio);
+        setAutoDetectedRatio(detectedRatio);
+
         const newLayer: Layer = {
           id: `layer-${Date.now()}`,
           name: `图层 ${layers.length + 1} (${layers.length === 0 ? '原图' : '导入'})`,
@@ -99,7 +105,7 @@ export const App: React.FC = () => {
 
         setLayers((prev) => [...prev, newLayer]);
         setActiveLayerId(newLayer.id);
-        showToast(`成功导入图片 (${img.width}×${img.height})`, 'success');
+        showToast(`已导入图片 (${img.width}×${img.height})，自动匹配画幅 ${detectedRatio}`, 'success');
       };
       reader.readAsDataURL(file);
     } catch (err: any) {
@@ -123,8 +129,12 @@ export const App: React.FC = () => {
     const currentPreset = presets.find((p) => p.id === selectedPresetId);
     const combinedPrompt = [currentPreset?.prompt, customPrompt].filter(Boolean).join('，');
 
+    // 计算指定画幅与分辨率模式下的像素规格（支持4K极高分辨率）
+    const { dimensionStr } = calculateDimensions(aspectRatio, resolutionMode);
+    const formattedResolution = `${resolutionMode} (${dimensionStr})`;
+
     setIsGenerating(true);
-    showToast('已向中转站发送图生图请求，AI 正在创作中...', 'info');
+    showToast(`已向中转站发送请求 (画幅 ${aspectRatio}, 分辨率 ${formattedResolution})...`, 'info');
 
     try {
       const generatedImageUrl = await apiService.generateImageToImage({
@@ -133,7 +143,7 @@ export const App: React.FC = () => {
         model: apiConfig.selectedModel,
         prompt: combinedPrompt,
         inputImageBase64: targetLayer.sourceUrl,
-        resolution,
+        resolution: formattedResolution,
         aspectRatio,
       });
 
@@ -329,12 +339,13 @@ export const App: React.FC = () => {
           onChangeModel={(m) => setApiConfig((prev) => ({ ...prev, selectedModel: m }))}
           aspectRatio={aspectRatio}
           onChangeAspectRatio={setAspectRatio}
-          resolution={resolution}
-          onChangeResolution={setResolution}
+          resolutionMode={resolutionMode}
+          onChangeResolutionMode={setResolutionMode}
           onPickImage={handleTriggerPickImage}
           onStartGeneration={handleStartGeneration}
           isGenerating={isGenerating}
           hasInputImage={layers.length > 0}
+          autoDetectedRatio={autoDetectedRatio}
         />
 
         {/* 图层面板侧滑抽屉 */}

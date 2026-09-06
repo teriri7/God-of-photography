@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Layer } from '../types';
 import { renderLayersComposite } from '../utils/canvasRenderer';
 import { ImagePlus, Sparkles, Loader2, Eye, EyeOff } from 'lucide-react';
@@ -24,6 +24,8 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   const getAspectRatioPadding = () => {
     switch (aspectRatio) {
       case '1:1': return 'aspect-square';
+      case '2:3': return 'aspect-[2/3]';
+      case '3:2': return 'aspect-[3/2]';
       case '9:16': return 'aspect-[9/16]';
       case '16:9': return 'aspect-[16/9]';
       case '3:4': return 'aspect-[3/4]';
