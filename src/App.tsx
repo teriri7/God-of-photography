@@ -7,10 +7,10 @@ import { detectClosestAspectRatio, calculateDimensions, ResolutionMode } from '.
 
 import { Header } from './components/Header';
 import { CanvasViewport } from './components/CanvasViewport';
-import { PromptPresetGrid } from './components/PromptPresetGrid';
+import { CollapsibleEditorSection } from './components/CollapsibleEditorSection';
+import { PresetBar } from './components/PresetBar';
+import { PresetModal } from './components/PresetModal';
 import { ControlBar } from './components/ControlBar';
-import { LayerPanel } from './components/LayerPanel';
-import { ColorGradingModal } from './components/ColorGradingModal';
 import { ApiSettingsModal } from './components/ApiSettingsModal';
 import { PhoneSimulatorFrame } from './components/PhoneSimulatorFrame';
 
@@ -33,9 +33,8 @@ export const App: React.FC = () => {
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
 
   // 4. 弹窗与抽屉控制
-  const [isLayerPanelOpen, setIsLayerPanelOpen] = useState<boolean>(false);
+  const [isPresetModalOpen, setIsPresetModalOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [gradingLayerId, setGradingLayerId] = useState<string | null>(null);
 
   // 5. 异步操作指示器
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -282,8 +281,6 @@ export const App: React.FC = () => {
     showToast(`预设「${updated.title}」已保存`, 'success');
   };
 
-  const gradingTargetLayer = layers.find((l) => l.id === gradingLayerId) || null;
-
   return (
     <PhoneSimulatorFrame
       isSimulator={isSimulator}
@@ -299,19 +296,16 @@ export const App: React.FC = () => {
           onChange={handleFileChange}
         />
 
-        {/* 顶部导航 */}
+        {/* 顶部紧凑导航 */}
         <Header
           onOpenSettings={() => setIsSettingsOpen(true)}
-          onOpenLayerPanel={() => setIsLayerPanelOpen(true)}
-          onExport={handleExport}
           layerCount={layers.length}
           isSimulator={isSimulator}
           onToggleSimulator={() => setIsSimulator(!isSimulator)}
-          isExporting={isExporting}
         />
 
         {/* 中间主滚动视图 */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar flex flex-col justify-between pb-2">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar flex flex-col justify-start pb-2">
           {/* 画布预览视窗 */}
           <CanvasViewport
             layers={layers}
@@ -321,14 +315,25 @@ export const App: React.FC = () => {
             aspectRatio={aspectRatio}
           />
 
-          {/* 2×2 提示词预设网格区 */}
-          <PromptPresetGrid
-            presets={presets}
-            selectedPresetId={selectedPresetId}
-            onSelectPreset={(p) => setSelectedPresetId(p.id)}
-            onUpdatePreset={handleUpdatePreset}
-            customPrompt={customPrompt}
-            onChangeCustomPrompt={setCustomPrompt}
+          {/* 直接在图片下方：折叠式图层管理与 Camera Raw 影调面板 */}
+          <CollapsibleEditorSection
+            layers={layers}
+            activeLayerId={activeLayerId}
+            onSelectLayer={setActiveLayerId}
+            onToggleVisibility={handleToggleVisibility}
+            onMoveUp={handleMoveUp}
+            onMoveDown={handleMoveDown}
+            onDeleteLayer={handleDeleteLayer}
+            onDuplicateLayer={handleDuplicateLayer}
+            onChangeOpacity={handleChangeOpacity}
+            onUpdateFilter={handleUpdateFilter}
+          />
+
+          {/* 预设条（选择预设按钮 + 并排半合成按钮） */}
+          <PresetBar
+            currentPreset={presets.find((p) => p.id === selectedPresetId)}
+            onOpenPresetModal={() => setIsPresetModalOpen(true)}
+            onSemiBlend={() => showToast('「半合成」功能已就绪，敬请期待后续高级图层合成！', 'info')}
           />
         </div>
 
@@ -342,36 +347,27 @@ export const App: React.FC = () => {
           resolutionMode={resolutionMode}
           onChangeResolutionMode={setResolutionMode}
           onPickImage={handleTriggerPickImage}
+          onExport={handleExport}
+          isExporting={isExporting}
           onStartGeneration={handleStartGeneration}
           isGenerating={isGenerating}
           hasInputImage={layers.length > 0}
           autoDetectedRatio={autoDetectedRatio}
         />
 
-        {/* 图层面板侧滑抽屉 */}
-        <LayerPanel
-          isOpen={isLayerPanelOpen}
-          onClose={() => setIsLayerPanelOpen(false)}
-          layers={layers}
-          activeLayerId={activeLayerId}
-          onSelectLayer={setActiveLayerId}
-          onToggleVisibility={handleToggleVisibility}
-          onMoveUp={handleMoveUp}
-          onMoveDown={handleMoveDown}
-          onDeleteLayer={handleDeleteLayer}
-          onDuplicateLayer={handleDuplicateLayer}
-          onChangeOpacity={handleChangeOpacity}
-          onChangeBlendMode={handleChangeBlendMode}
-          onOpenColorGrading={(id) => setGradingLayerId(id)}
-          onAddLayer={handleTriggerPickImage}
-        />
-
-        {/* 二级调色与影调调节模态窗 */}
-        <ColorGradingModal
-          layer={gradingTargetLayer}
-          isOpen={gradingLayerId !== null}
-          onClose={() => setGradingLayerId(null)}
-          onUpdateFilter={handleUpdateFilter}
+        {/* 预设二级选择模态窗 */}
+        <PresetModal
+          isOpen={isPresetModalOpen}
+          onClose={() => setIsPresetModalOpen(false)}
+          presets={presets}
+          selectedPresetId={selectedPresetId}
+          onSelectPreset={(p) => {
+            setSelectedPresetId(p.id);
+            showToast(`已选定风格预设「${p.title}」`, 'success');
+          }}
+          onUpdatePreset={handleUpdatePreset}
+          customPrompt={customPrompt}
+          onChangeCustomPrompt={setCustomPrompt}
         />
 
         {/* API 与模型设置模态窗 */}

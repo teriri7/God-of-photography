@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Sparkles, ImagePlus, ChevronDown, Ratio, Maximize2, Cpu } from 'lucide-react';
+import { Sparkles, ImagePlus, ChevronDown, Ratio, Maximize2, Cpu, Download } from 'lucide-react';
 
 interface ControlBarProps {
   models: string[];
@@ -10,6 +10,8 @@ interface ControlBarProps {
   resolutionMode: '1K' | '2K' | '4K';
   onChangeResolutionMode: (mode: '1K' | '2K' | '4K') => void;
   onPickImage: () => void;
+  onExport: () => void;
+  isExporting: boolean;
   onStartGeneration: () => void;
   isGenerating: boolean;
   hasInputImage: boolean;
@@ -32,13 +34,15 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   resolutionMode,
   onChangeResolutionMode,
   onPickImage,
+  onExport,
+  isExporting,
   onStartGeneration,
   isGenerating,
   hasInputImage,
   autoDetectedRatio,
 }) => {
   return (
-    <div className="w-full px-3 py-3 space-y-3 glass-panel border-t border-pink-200/60 shadow-lg">
+    <div className="w-full px-3 py-2.5 space-y-2.5 glass-panel border-t border-pink-200/60 shadow-lg">
       {/* 第一行：模型选择 & 参数快捷控制 */}
       <div className="space-y-2">
         {/* 模型下拉选择 */}
@@ -64,7 +68,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         </div>
 
         {/* 画面比例与分辨率快捷 Pill */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-0.5">
           {/* 画面比例 */}
           <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar py-0.5">
             <span className="text-[10px] text-slate-500 font-medium shrink-0 flex items-center mr-0.5">
@@ -77,7 +81,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
                 <button
                   key={ratio}
                   onClick={() => onChangeAspectRatio(ratio)}
-                  className={`relative px-2 py-1 rounded-lg text-[10px] font-semibold shrink-0 transition-all ${
+                  className={`relative px-2 py-0.8 rounded-lg text-[10px] font-semibold shrink-0 transition-all ${
                     isSelected
                       ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
                       : 'bg-white/70 hover:bg-pink-100 text-slate-600 border border-pink-100'
@@ -121,29 +125,39 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         </div>
       </div>
 
-      {/* 第二行：核心交互按钮（打开图片 + 开始图生图大按钮） */}
-      <div className="flex items-center space-x-2.5 pt-1">
-        {/* 打开手机本地图片 */}
+      {/* 第二行：核心交互按钮（打开/更换图片 + 导出图片 + 开始图生图大按钮） */}
+      <div className="flex items-center space-x-2 pt-0.5">
+        {/* 打开/更换图片 */}
         <button
           onClick={onPickImage}
-          className="flex-1 py-3 px-3 rounded-2xl glass-panel hover:bg-white/90 text-slate-700 font-bold text-xs flex items-center justify-center space-x-1.5 border border-pink-200 shadow-sm active:scale-95 transition-all"
+          className="flex-1 py-2.5 px-2 rounded-2xl glass-panel hover:bg-white/90 text-slate-700 font-bold text-xs flex items-center justify-center space-x-1 border border-pink-200 shadow-xs active:scale-95 transition-all truncate"
         >
-          <ImagePlus className="w-4 h-4 text-pink-500" />
-          <span>{hasInputImage ? '更换图片' : '打开图片'}</span>
+          <ImagePlus className="w-3.5 h-3.5 text-pink-500 shrink-0" />
+          <span>{hasInputImage ? '换图' : '打开图片'}</span>
+        </button>
+
+        {/* 导出图片 (移至更换图片旁边) */}
+        <button
+          onClick={onExport}
+          disabled={!hasInputImage || isExporting}
+          className="flex-1 py-2.5 px-2 rounded-2xl bg-white/80 hover:bg-pink-100/90 disabled:opacity-40 text-pink-700 font-bold text-xs flex items-center justify-center space-x-1 border border-pink-200/80 shadow-xs active:scale-95 transition-all truncate"
+        >
+          <Download className="w-3.5 h-3.5 text-pink-600 shrink-0" />
+          <span>{isExporting ? '导出中' : '导出图片'}</span>
         </button>
 
         {/* 开始图生图处理 */}
         <button
           onClick={onStartGeneration}
           disabled={!hasInputImage || isGenerating}
-          className="flex-[2] py-3 px-4 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-400 to-pink-500 hover:from-pink-600 hover:to-rose-500 disabled:opacity-40 text-white font-bold text-xs shadow-lg shadow-pink-300/60 active:scale-95 transition-all flex items-center justify-center space-x-2 relative overflow-hidden group"
+          className="flex-[1.8] py-2.5 px-3 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-400 to-pink-500 hover:from-pink-600 hover:to-rose-500 disabled:opacity-40 text-white font-bold text-xs shadow-md shadow-pink-300/60 active:scale-95 transition-all flex items-center justify-center space-x-1.5 relative overflow-hidden group"
         >
           {/* 按钮微光流光效果 */}
           <div className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/25 to-transparent -skew-x-12 group-hover:translate-x-[250%] transition-transform duration-1000 ease-out" />
           
-          <Sparkles className={`w-4 h-4 text-pink-100 ${isGenerating ? 'animate-spin' : 'animate-pulse'}`} />
-          <span className="tracking-wide">
-            {isGenerating ? 'AI 处理中...' : '开始生成并载入新图层'}
+          <Sparkles className={`w-3.5 h-3.5 text-pink-100 ${isGenerating ? 'animate-spin' : 'animate-pulse'} shrink-0`} />
+          <span className="tracking-wide truncate">
+            {isGenerating ? 'AI处理中...' : '开始生成并载入'}
           </span>
         </button>
       </div>

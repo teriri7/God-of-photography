@@ -1,4 +1,4 @@
-﻿import { Layer, LayerFilterSettings } from '../types';
+import { Layer, LayerFilterSettings } from '../types';
 
 /**
  * 图像缓存对象，避免重复创建 HTMLImageElement
@@ -40,14 +40,6 @@ export async function renderLayerToCanvas(
   const img = await loadImage(layer.sourceUrl);
   const filter = layer.filter;
 
-  // 1. 构建基本 CSS 滤镜字符串
-  const brightnessVal = 100 + filter.brightness; // 0 ~ 200%
-  const contrastVal = 100 + filter.contrast;     // 0 ~ 200%
-  const saturationVal = 100 + filter.saturation; // 0 ~ 200%
-  const hueVal = filter.hueRotate;               // -180 ~ 180deg
-
-  ctx.filter = `brightness(${brightnessVal}%) contrast(${contrastVal}%) saturate(${saturationVal}%) hue-rotate(${hueVal}deg)`;
-
   // 计算居中等比铺满 / 自适应尺寸
   const hRatio = targetWidth / img.width;
   const vRatio = targetHeight / img.height;
@@ -59,15 +51,19 @@ export async function renderLayerToCanvas(
 
   ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
 
-  // 2. 如果存在白平衡（色温/色调）或二级影调（阴影/高光/曝光），进行精准像素级调色
-  const hasAdvancedAdjustments =
+  // 如果存在任意 Camera Raw 调色参数，进行全像素级精确调色
+  const hasAdjustments =
+    filter.exposure !== 0 ||
+    filter.contrast !== 0 ||
+    filter.highlights !== 0 ||
+    filter.shadows !== 0 ||
+    filter.whites !== 0 ||
+    filter.blacks !== 0 ||
     filter.temperature !== 0 ||
     filter.tint !== 0 ||
-    filter.exposure !== 0 ||
-    filter.shadows !== 0 ||
-    filter.highlights !== 0;
+    filter.saturation !== 0;
 
-  if (hasAdvancedAdjustments) {
+  if (hasAdjustments) {
     applyAdvancedTonalAdjustments(ctx, targetWidth, targetHeight, filter);
   }
 
@@ -75,7 +71,7 @@ export async function renderLayerToCanvas(
 }
 
 /**
- * 精准白平衡与影调处理
+ * 类似 Adobe Camera Raw / Lightroom 的全能影调像素级调色引擎
  */
 function applyAdvancedTonalAdjustments(
   ctx: CanvasRenderingContext2D,
@@ -86,20 +82,26 @@ function applyAdvancedTonalAdjustments(
   const imgData = ctx.getImageData(0, 0, width, height);
   const data = imgData.data;
 
-  // 色温系数: 暖调增加红/减少蓝，冷调增加蓝/减少红
-  const tempR = filter.temperature > 0 ? 1 + (filter.temperature / 100) * 0.3 : 1;
-  const tempB = filter.temperature < 0 ? 1 + (Math.abs(filter.temperature) / 100) * 0.3 : 1 - (filter.temperature / 100) * 0.15;
-
-  // 色调系数: 品红增加红蓝/减少绿，绿调增加绿/减少红蓝
+  // 1. 白平衡系数
+  const tempR = filter.temperature > 0 ? 1 + (filter.temperature / 100) * 0.35 : 1;
+  const tempB = filter.temperature < 0 ? 1 + (Math.abs(filter.temperature) / 100) * 0.35 : 1 - (filter.temperature / 100) * 0.15;
   const tintG = filter.tint < 0 ? 1 + (Math.abs(filter.tint) / 100) * 0.25 : 1 - (filter.tint / 100) * 0.15;
   const tintRB = filter.tint > 0 ? 1 + (filter.tint / 100) * 0.15 : 1;
 
-  // 曝光系数: 2 ^ (exposure / 50)
+  // 2. 曝光系数: 2 ^ (exposure / 50)
   const exposureFactor = Math.pow(2, filter.exposure / 50);
 
-  // 阴影与高光强度 (-100 ~ 100)
-  const shadowAdj = (filter.shadows / 100) * 60;
+  // 3. 对比度系数
+  const contrastFactor = (filter.contrast + 100) / 100;
+
+  // 4. 饱和度系数
+  const satFactor = Math.max(0, (filter.saturation + 100) / 100);
+
+  // 5. 影调权重增益 (-100 ~ 100)
   const highlightAdj = (filter.highlights / 100) * 60;
+  const shadowAdj = (filter.shadows / 100) * 60;
+  const whiteAdj = (filter.whites / 100) * 55;
+  const blackAdj = (filter.blacks / 100) * 55;
 
   const len = data.length;
   for (let i = 0; i < len; i += 4) {
@@ -109,35 +111,65 @@ function applyAdvancedTonalAdjustments(
     let g = data[i + 1];
     let b = data[i + 2];
 
-    // 1. 白平衡
+    // ① 色温与色调 (White Balance)
     r = r * tempR * tintRB;
     g = g * tintG;
     b = b * tempB * tintRB;
 
-    // 2. 曝光
+    // ② 曝光 (Exposure)
     r *= exposureFactor;
     g *= exposureFactor;
     b *= exposureFactor;
 
-    // 3. 影调（阴影与高光分离控制）
-    if (shadowAdj !== 0 || highlightAdj !== 0) {
-      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-      
-      // 阴影权重（暗部 0~128 显著，越暗权重越高）
-      if (shadowAdj !== 0 && luminance < 160) {
-        const shadowWeight = Math.max(0, 1 - luminance / 160);
-        r += shadowAdj * shadowWeight;
-        g += shadowAdj * shadowWeight;
-        b += shadowAdj * shadowWeight;
-      }
+    // 计算当前亮度
+    let lum = 0.299 * r + 0.587 * g + 0.114 * b;
 
-      // 高光权重（亮部 96~255 显著，越亮权重越高）
-      if (highlightAdj !== 0 && luminance > 96) {
-        const highlightWeight = Math.max(0, (luminance - 96) / 159);
-        r += highlightAdj * highlightWeight;
-        g += highlightAdj * highlightWeight;
-        b += highlightAdj * highlightWeight;
-      }
+    // ③ 影调四段控制：高光 / 阴影 / 白色 / 黑色
+    // 阴影 (Shadows: 0 ~ 160)
+    if (shadowAdj !== 0 && lum < 160) {
+      const wShadow = Math.max(0, 1 - lum / 160);
+      r += shadowAdj * wShadow;
+      g += shadowAdj * wShadow;
+      b += shadowAdj * wShadow;
+    }
+
+    // 高光 (Highlights: 96 ~ 255)
+    if (highlightAdj !== 0 && lum > 96) {
+      const wHighlight = Math.max(0, (lum - 96) / 159);
+      r += highlightAdj * wHighlight;
+      g += highlightAdj * wHighlight;
+      b += highlightAdj * wHighlight;
+    }
+
+    // 白色 (Whites: 极亮区 180 ~ 255)
+    if (whiteAdj !== 0 && lum > 175) {
+      const wWhite = Math.max(0, (lum - 175) / 80);
+      r += whiteAdj * wWhite;
+      g += whiteAdj * wWhite;
+      b += whiteAdj * wWhite;
+    }
+
+    // 黑色 (Blacks: 极暗区 0 ~ 80)
+    if (blackAdj !== 0 && lum < 85) {
+      const wBlack = Math.max(0, 1 - lum / 85);
+      r += blackAdj * wBlack;
+      g += blackAdj * wBlack;
+      b += blackAdj * wBlack;
+    }
+
+    // ④ 对比度 (Contrast: 绕 128 中心展开或收缩)
+    if (filter.contrast !== 0) {
+      r = (r - 128) * contrastFactor + 128;
+      g = (g - 128) * contrastFactor + 128;
+      b = (b - 128) * contrastFactor + 128;
+    }
+
+    // ⑤ 饱和度 (Saturation)
+    if (filter.saturation !== 0) {
+      lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      r = lum + (r - lum) * satFactor;
+      g = lum + (g - lum) * satFactor;
+      b = lum + (b - lum) * satFactor;
     }
 
     // 约束在 0 ~ 255 区间
