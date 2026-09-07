@@ -1,7 +1,11 @@
 import React, { useRef } from 'react';
-import { Sparkles, ImagePlus, ChevronDown, Ratio, Maximize2, Cpu, Download } from 'lucide-react';
+import { Sparkles, ImagePlus, ChevronDown, Ratio, Maximize2, Cpu, Download, Globe } from 'lucide-react';
+import { ApiEndpoint } from '../types';
 
 interface ControlBarProps {
+  endpoints: ApiEndpoint[];
+  activeEndpointId: string;
+  onChangeEndpoint: (id: string) => void;
   models: string[];
   selectedModel: string;
   onChangeModel: (model: string) => void;
@@ -26,6 +30,9 @@ const RESOLUTION_OPTIONS: Array<{ value: '1K' | '2K' | '4K'; label: string }> = 
 ];
 
 export const ControlBar: React.FC<ControlBarProps> = ({
+  endpoints,
+  activeEndpointId,
+  onChangeEndpoint,
   models,
   selectedModel,
   onChangeModel,
@@ -43,27 +50,52 @@ export const ControlBar: React.FC<ControlBarProps> = ({
 }) => {
   return (
     <div className="w-full px-3 py-2.5 space-y-2.5 glass-panel border-t border-pink-200/60 shadow-lg">
-      {/* 第一行：模型选择 & 参数快捷控制 */}
+      {/* 第一行：API线路与模型选择 & 参数快捷控制 */}
       <div className="space-y-2">
-        {/* 模型下拉选择 */}
-        <div className="flex items-center space-x-2">
-          <div className="flex items-center space-x-1 text-pink-600 shrink-0 text-xs font-bold">
-            <Cpu className="w-3.5 h-3.5" />
-            <span>AI模型:</span>
+        {/* 线路与模型并排选择 */}
+        <div className="grid grid-cols-2 gap-2">
+          {/* API 线路 */}
+          <div className="flex items-center space-x-1 min-w-0">
+            <div className="flex items-center space-x-1 text-pink-600 shrink-0 text-xs font-bold">
+              <Globe className="w-3.5 h-3.5" />
+              <span>线路:</span>
+            </div>
+            <div className="relative flex-1 min-w-0">
+              <select
+                value={activeEndpointId}
+                onChange={(e) => onChangeEndpoint(e.target.value)}
+                className="w-full glass-input appearance-none px-2 py-1.5 rounded-xl text-xs font-semibold text-pink-700 pr-5 truncate"
+              >
+                {endpoints.map((ep) => (
+                  <option key={ep.id} value={ep.id}>
+                    {ep.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3 h-3 text-pink-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
           </div>
-          <div className="relative flex-1">
-            <select
-              value={selectedModel}
-              onChange={(e) => onChangeModel(e.target.value)}
-              className="w-full glass-input appearance-none px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-800 pr-7 truncate"
-            >
-              {models.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+
+          {/* AI 模型 */}
+          <div className="flex items-center space-x-1 min-w-0">
+            <div className="flex items-center space-x-1 text-pink-600 shrink-0 text-xs font-bold">
+              <Cpu className="w-3.5 h-3.5" />
+              <span>模型:</span>
+            </div>
+            <div className="relative flex-1 min-w-0">
+              <select
+                value={selectedModel}
+                onChange={(e) => onChangeModel(e.target.value)}
+                className="w-full glass-input appearance-none px-2 py-1.5 rounded-xl text-xs font-medium text-slate-800 pr-5 truncate"
+              >
+                {models.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
           </div>
         </div>
 

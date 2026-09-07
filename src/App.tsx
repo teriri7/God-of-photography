@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Layer, LayerFilterSettings, DEFAULT_FILTER_SETTINGS, ApiConfig, PromptPreset } from './types';
+import { Layer, LayerFilterSettings, DEFAULT_FILTER_SETTINGS, ApiEndpoint, PromptPreset } from './types';
 import { storageService } from './services/storageService';
 import { apiService } from './services/apiService';
 import { exportCompositeImage, loadImage } from './utils/canvasRenderer';
@@ -16,18 +16,24 @@ import { ApiSettingsModal } from './components/ApiSettingsModal';
 import { PhoneSimulatorFrame } from './components/PhoneSimulatorFrame';
 
 export const App: React.FC = () => {
-  // 1. 持久化状态初始化
-  const [apiConfig, setApiConfig] = useState<ApiConfig>(() => storageService.getApiConfig());
-  const [models, setModels] = useState<string[]>(() => storageService.getModels());
+  // 1. 持久化状态初始化 (多 API 线路与模型)
+  const [endpoints, setEndpoints] = useState<ApiEndpoint[]>(() => storageService.getEndpoints());
+  const [activeEndpointId, setActiveEndpointId] = useState<string>(() => storageService.getActiveEndpointId());
+  const activeEndpoint = endpoints.find((ep) => ep.id === activeEndpointId) || endpoints[0];
+
+  const [models, setModels] = useState<string[]>(() => activeEndpoint?.models || storageService.getModels());
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    return activeEndpoint?.selectedModel || storageService.getLastImageModel() || activeEndpoint?.models[0] || '[yu]gemini-3.1-flash-lite-image';
+  });
   const [presets, setPresets] = useState<PromptPreset[]>(() => storageService.getPresets());
   const [isSimulator, setIsSimulator] = useState<boolean>(() => storageService.getSimulatorMode());
 
-  // 2. 主页面交互状态 (默认选用首个预设「场照除杂」)
+  // 2. 主页面交互状态 (画幅比例与分辨率记忆，默认选用首个预设「场照除杂」)
   const [selectedPresetId, setSelectedPresetId] = useState<string>(() => presets[0]?.id || 'preset-declutter');
   const [customPrompt, setCustomPrompt] = useState<string>('');
-  const [aspectRatio, setAspectRatio] = useState<string>('1:1');
+  const [aspectRatio, setAspectRatio] = useState<string>(() => storageService.getLastAspectRatio() || '1:1');
   const [autoDetectedRatio, setAutoDetectedRatio] = useState<string | null>(null);
-  const [resolutionMode, setResolutionMode] = useState<ResolutionMode>('2K');
+  const [resolutionMode, setResolutionMode] = useState<ResolutionMode>(() => storageService.getLastResolution() || '2K');
 
   // 3. 图层系统状态
   const [layers, setLayers] = useState<Layer[]>([]);
@@ -56,12 +62,12 @@ export const App: React.FC = () => {
 
   // 持久化同步
   useEffect(() => {
-    storageService.saveApiConfig(apiConfig);
-  }, [apiConfig]);
+    storageService.saveEndpoints(endpoints);
+  }, [endpoints]);
 
   useEffect(() => {
-    storageService.saveModels(models);
-  }, [models]);
+    storageService.saveActiveEndpointId(activeEndpointId);
+  }, [activeEndpointId]);
 
   useEffect(() => {
     storageService.savePresets(presets);
@@ -70,6 +76,51 @@ export const App: React.FC = () => {
   useEffect(() => {
     storageService.saveSimulatorMode(isSimulator);
   }, [isSimulator]);
+
+  // 切换 API 线路
+  const handleSelectEndpoint = (newId: string) => {
+    setActiveEndpointId(newId);
+    storageService.saveActiveEndpointId(newId);
+    const target = endpoints.find((ep) => ep.id === newId);
+    if (target) {
+      setModels(target.models || []);
+      const modelToUse = target.selectedModel || target.models?.[0] || '[yu]gemini-3.1-flash-lite-image';
+      setSelectedModel(modelToUse);
+      storageService.saveLastImageModel(modelToUse);
+      showToast(`已切换至线路「${target.name}」`, 'info');
+    }
+  };
+
+  // 更新所有线路
+  const handleUpdateEndpoints = (newEndpoints: ApiEndpoint[]) => {
+    setEndpoints(newEndpoints);
+    storageService.saveEndpoints(newEndpoints);
+    const current = newEndpoints.find((ep) => ep.id === activeEndpointId);
+    if (current) {
+      setModels(current.models || []);
+    }
+  };
+
+  // 更改模型并持久化
+  const handleChangeModel = (m: string) => {
+    setSelectedModel(m);
+    storageService.saveLastImageModel(m);
+    setEndpoints((prev) =>
+      prev.map((ep) => (ep.id === activeEndpointId ? { ...ep, selectedModel: m } : ep))
+    );
+  };
+
+  // 更改分辨率并持久化
+  const handleChangeResolutionMode = (mode: ResolutionMode) => {
+    setResolutionMode(mode);
+    storageService.saveLastResolution(mode);
+  };
+
+  // 更改比例并持久化
+  const handleChangeAspectRatio = (ratio: string) => {
+    setAspectRatio(ratio);
+    storageService.saveLastAspectRatio(ratio);
+  };
 
   // 打开系统相册/文件选择
   const handleTriggerPickImage = () => {
@@ -135,13 +186,13 @@ export const App: React.FC = () => {
     const formattedResolution = `${resolutionMode} (${dimensionStr})`;
 
     setIsGenerating(true);
-    showToast(`已向中转站发送请求 (画幅 ${aspectRatio}, 分辨率 ${formattedResolution})...`, 'info');
+    showToast(`已向 [${activeEndpoint.name}] 发送请求 (画幅 ${aspectRatio}, 分辨率 ${formattedResolution})...`, 'info');
 
     try {
       const generatedImageUrl = await apiService.generateImageToImage({
-        baseUrl: apiConfig.baseUrl,
-        apiKey: apiConfig.apiKey,
-        model: apiConfig.selectedModel,
+        baseUrl: activeEndpoint.baseUrl,
+        apiKey: activeEndpoint.apiKey,
+        model: selectedModel,
         prompt: combinedPrompt,
         inputImageBase64: targetLayer.sourceUrl,
         resolution: formattedResolution,
@@ -383,13 +434,16 @@ export const App: React.FC = () => {
 
         {/* 底部参数切换与开始生成按钮 */}
         <ControlBar
+          endpoints={endpoints}
+          activeEndpointId={activeEndpointId}
+          onChangeEndpoint={handleSelectEndpoint}
           models={models}
-          selectedModel={apiConfig.selectedModel}
-          onChangeModel={(m) => setApiConfig((prev) => ({ ...prev, selectedModel: m }))}
+          selectedModel={selectedModel}
+          onChangeModel={handleChangeModel}
           aspectRatio={aspectRatio}
-          onChangeAspectRatio={setAspectRatio}
+          onChangeAspectRatio={handleChangeAspectRatio}
           resolutionMode={resolutionMode}
-          onChangeResolutionMode={setResolutionMode}
+          onChangeResolutionMode={handleChangeResolutionMode}
           onPickImage={handleTriggerPickImage}
           onExport={handleExport}
           isExporting={isExporting}
@@ -421,10 +475,10 @@ export const App: React.FC = () => {
           isOpen={isSemiSynthesisOpen}
           onClose={() => setIsSemiSynthesisOpen(false)}
           baseImage={(layers.find((l) => l.id === activeLayerId) || layers[layers.length - 1])?.sourceUrl || ''}
-          apiConfig={apiConfig}
-          models={models}
-          aspectRatio={aspectRatio}
-          resolutionMode={resolutionMode}
+          endpoints={endpoints}
+          activeEndpointId={activeEndpointId}
+          onSelectEndpoint={handleSelectEndpoint}
+          initialAspectRatio={aspectRatio}
           onAddLayer={handleAddGeneratedLayer}
           onToast={showToast}
         />
@@ -433,18 +487,11 @@ export const App: React.FC = () => {
         <ApiSettingsModal
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
-          config={apiConfig}
-          onSaveConfig={(cfg) => {
-            setApiConfig(cfg);
-            showToast('API 设置已更新保存', 'success');
-          }}
-          models={models}
-          onUpdateModels={(newModels) => {
-            setModels(newModels);
-            if (!newModels.includes(apiConfig.selectedModel) && newModels.length > 0) {
-              setApiConfig((prev) => ({ ...prev, selectedModel: newModels[0] }));
-            }
-          }}
+          endpoints={endpoints}
+          activeEndpointId={activeEndpointId}
+          onSelectEndpoint={handleSelectEndpoint}
+          onUpdateEndpoints={handleUpdateEndpoints}
+          onToast={showToast}
         />
 
         {/* 顶部全局 Toast 浮动提示条 */}

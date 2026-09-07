@@ -1,10 +1,16 @@
-import { ApiConfig, PromptPreset } from '../types';
+import { ApiConfig, ApiEndpoint, PromptPreset, ResolutionMode } from '../types';
 
 const STORAGE_KEYS = {
   API_CONFIG: 'pinklayer_api_config',
+  API_ENDPOINTS: 'pinklayer_api_endpoints',
+  ACTIVE_ENDPOINT_ID: 'pinklayer_active_endpoint_id',
   MODELS: 'pinklayer_models',
   PRESETS: 'pinklayer_presets',
   SIMULATOR_MODE: 'pinklayer_simulator_mode',
+  LAST_IMAGE_MODEL: 'pinklayer_last_image_model',
+  LAST_VISION_MODEL: 'pinklayer_last_vision_model',
+  LAST_RESOLUTION: 'pinklayer_last_resolution',
+  LAST_ASPECT_RATIO: 'pinklayer_last_aspect_ratio',
 };
 
 export const DEFAULT_API_CONFIG: ApiConfig = {
@@ -12,6 +18,25 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   apiKey: 'sk-HopXIFgvhinItOuMgOVUGT8Z80PuINBhGr4FKK7ZDW2VZ06J',
   selectedModel: '[yu]gemini-3.1-flash-lite-image',
 };
+
+export const DEFAULT_ENDPOINTS: ApiEndpoint[] = [
+  {
+    id: 'endpoint-momo',
+    name: 'MomoAPI',
+    baseUrl: 'https://api.momoapi.icu/',
+    apiKey: 'sk-HopXIFgvhinItOuMgOVUGT8Z80PuINBhGr4FKK7ZDW2VZ06J',
+    models: [
+      '[yu]gemini-3.1-flash-lite-image',
+      '[yu1]gemini-3.1-flash-image',
+      '[yu]gemini-3.1-flash-image-preview',
+      'tsc1-gpt-5.6-sol',
+      'gpt-image-2',
+      'gpt-4o',
+    ],
+    selectedModel: '[yu]gemini-3.1-flash-lite-image',
+    selectedVisionModel: 'tsc1-gpt-5.6-sol',
+  },
+];
 
 export const DECLUTTER_PRESET: PromptPreset = {
   id: 'preset-declutter',
@@ -54,34 +79,181 @@ export const DEFAULT_PRESETS: PromptPreset[] = [
 ];
 
 export const storageService = {
-  getApiConfig(): ApiConfig {
+  getEndpoints(): ApiEndpoint[] {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.API_CONFIG);
+      const data = localStorage.getItem(STORAGE_KEYS.API_ENDPOINTS);
       if (data) {
-        return { ...DEFAULT_API_CONFIG, ...JSON.parse(data) };
+        const parsed: ApiEndpoint[] = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      const oldConfig = localStorage.getItem(STORAGE_KEYS.API_CONFIG);
+      if (oldConfig) {
+        const parsedOld = JSON.parse(oldConfig);
+        const migrated: ApiEndpoint = {
+          id: 'endpoint-migrated',
+          name: '默认线路',
+          baseUrl: parsedOld.baseUrl || DEFAULT_API_CONFIG.baseUrl,
+          apiKey: parsedOld.apiKey || DEFAULT_API_CONFIG.apiKey,
+          models: this.getModels(),
+          selectedModel: parsedOld.selectedModel || DEFAULT_API_CONFIG.selectedModel,
+          selectedVisionModel: 'tsc1-gpt-5.6-sol',
+        };
+        this.saveEndpoints([migrated]);
+        return [migrated];
       }
     } catch (e) {
-      console.error('Failed to load api config:', e);
+      console.error('Failed to load api endpoints:', e);
     }
-    return DEFAULT_API_CONFIG;
+    return DEFAULT_ENDPOINTS;
+  },
+
+  saveEndpoints(endpoints: ApiEndpoint[]): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.API_ENDPOINTS, JSON.stringify(endpoints));
+    } catch (e) {
+      console.error('Failed to save api endpoints:', e);
+    }
+  },
+
+  getActiveEndpointId(): string {
+    try {
+      const id = localStorage.getItem(STORAGE_KEYS.ACTIVE_ENDPOINT_ID);
+      if (id) return id;
+    } catch (e) {
+      console.error('Failed to get active endpoint id:', e);
+    }
+    const endpoints = this.getEndpoints();
+    return endpoints[0]?.id || DEFAULT_ENDPOINTS[0].id;
+  },
+
+  saveActiveEndpointId(id: string): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_ENDPOINT_ID, id);
+    } catch (e) {
+      console.error('Failed to save active endpoint id:', e);
+    }
+  },
+
+  getActiveEndpoint(): ApiEndpoint {
+    const endpoints = this.getEndpoints();
+    const activeId = this.getActiveEndpointId();
+    return endpoints.find((e) => e.id === activeId) || endpoints[0] || DEFAULT_ENDPOINTS[0];
+  },
+
+  updateEndpoint(id: string, updates: Partial<ApiEndpoint>): ApiEndpoint[] {
+    const endpoints = this.getEndpoints();
+    const updated = endpoints.map((ep) => (ep.id === id ? { ...ep, ...updates } : ep));
+    this.saveEndpoints(updated);
+    return updated;
+  },
+
+  getApiConfig(): ApiConfig {
+    const active = this.getActiveEndpoint();
+    return {
+      baseUrl: active.baseUrl,
+      apiKey: active.apiKey,
+      selectedModel: this.getLastImageModel() || active.selectedModel || DEFAULT_API_CONFIG.selectedModel,
+    };
   },
 
   saveApiConfig(config: ApiConfig): void {
     try {
       localStorage.setItem(STORAGE_KEYS.API_CONFIG, JSON.stringify(config));
+      const activeId = this.getActiveEndpointId();
+      this.updateEndpoint(activeId, {
+        baseUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        selectedModel: config.selectedModel,
+      });
     } catch (e) {
       console.error('Failed to save api config:', e);
     }
   },
 
-  getModels(): string[] {
+  getLastImageModel(): string {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.MODELS);
-      if (data) {
-        return JSON.parse(data);
-      }
+      const model = localStorage.getItem(STORAGE_KEYS.LAST_IMAGE_MODEL);
+      if (model) return model;
     } catch (e) {
-      console.error('Failed to load models:', e);
+      console.error('Failed to load last image model:', e);
+    }
+    const active = this.getActiveEndpoint();
+    return active.selectedModel || active.models[0] || '[yu]gemini-3.1-flash-lite-image';
+  },
+
+  saveLastImageModel(model: string): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.LAST_IMAGE_MODEL, model);
+      const activeId = this.getActiveEndpointId();
+      this.updateEndpoint(activeId, { selectedModel: model });
+    } catch (e) {
+      console.error('Failed to save last image model:', e);
+    }
+  },
+
+  getLastVisionModel(): string {
+    try {
+      const model = localStorage.getItem(STORAGE_KEYS.LAST_VISION_MODEL);
+      if (model) return model;
+    } catch (e) {
+      console.error('Failed to load last vision model:', e);
+    }
+    const active = this.getActiveEndpoint();
+    return active.selectedVisionModel || 'tsc1-gpt-5.6-sol';
+  },
+
+  saveLastVisionModel(model: string): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.LAST_VISION_MODEL, model);
+      const activeId = this.getActiveEndpointId();
+      this.updateEndpoint(activeId, { selectedVisionModel: model });
+    } catch (e) {
+      console.error('Failed to save last vision model:', e);
+    }
+  },
+
+  getLastResolution(): ResolutionMode {
+    try {
+      const res = localStorage.getItem(STORAGE_KEYS.LAST_RESOLUTION);
+      if (res === '1K' || res === '2K' || res === '4K') return res as ResolutionMode;
+    } catch (e) {
+      console.error('Failed to load last resolution:', e);
+    }
+    return '2K';
+  },
+
+  saveLastResolution(resolution: ResolutionMode): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.LAST_RESOLUTION, resolution);
+    } catch (e) {
+      console.error('Failed to save last resolution:', e);
+    }
+  },
+
+  getLastAspectRatio(): string {
+    try {
+      const ratio = localStorage.getItem(STORAGE_KEYS.LAST_ASPECT_RATIO);
+      if (ratio) return ratio;
+    } catch (e) {
+      console.error('Failed to load last aspect ratio:', e);
+    }
+    return '1:1';
+  },
+
+  saveLastAspectRatio(ratio: string): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.LAST_ASPECT_RATIO, ratio);
+    } catch (e) {
+      console.error('Failed to save last aspect ratio:', e);
+    }
+  },
+
+  getModels(): string[] {
+    const active = this.getActiveEndpoint();
+    if (active.models && active.models.length > 0) {
+      return active.models;
     }
     return ['[yu]gemini-3.1-flash-lite-image', '[yu1]gemini-3.1-flash-image', 'gpt-image-2'];
   },
@@ -89,6 +261,8 @@ export const storageService = {
   saveModels(models: string[]): void {
     try {
       localStorage.setItem(STORAGE_KEYS.MODELS, JSON.stringify(models));
+      const activeId = this.getActiveEndpointId();
+      this.updateEndpoint(activeId, { models });
     } catch (e) {
       console.error('Failed to save models:', e);
     }

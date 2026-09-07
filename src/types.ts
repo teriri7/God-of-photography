@@ -42,6 +42,16 @@ export interface ApiConfig {
   selectedModel: string;
 }
 
+export interface ApiEndpoint {
+  id: string;
+  name: string;               // 自定义简单名称, 如 "MomoAPI", "个人中转", "备用线路"
+  baseUrl: string;
+  apiKey: string;
+  models: string[];           // 该线路独立拉取的模型列表
+  selectedModel?: string;     // 该线路记忆的默认生图模型
+  selectedVisionModel?: string; // 该线路记忆的默认视觉模型
+}
+
 export interface PromptPreset {
   id: string;
   title: string;

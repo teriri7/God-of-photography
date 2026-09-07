@@ -1,8 +1,8 @@
-﻿import React, { useState, useEffect } from 'react';
-import { ApiConfig } from '../types';
+import React, { useState, useEffect } from 'react';
+import { ApiEndpoint, ResolutionMode } from '../types';
 import { apiService } from '../services/apiService';
-import { DECLUTTER_PRESET } from '../services/storageService';
-import { calculateDimensions } from '../utils/ratioHelper';
+import { DECLUTTER_PRESET, storageService } from '../services/storageService';
+import { calculateDimensions, detectClosestAspectRatio } from '../utils/ratioHelper';
 import {
   Wand2,
   Sparkles,
@@ -18,39 +18,61 @@ import {
   Loader2,
   Layers,
   FileText,
+  Globe,
+  ChevronDown,
 } from 'lucide-react';
 
 interface SemiSynthesisModalProps {
   isOpen: boolean;
   onClose: () => void;
   baseImage: string; // 当前工作台显示的基准原图
-  apiConfig: ApiConfig;
-  models: string[];
-  aspectRatio: string;
-  resolutionMode: '1K' | '2K' | '4K';
+  endpoints: ApiEndpoint[];
+  activeEndpointId: string;
+  onSelectEndpoint: (id: string) => void;
+  initialAspectRatio?: string;
   onAddLayer: (imageUrl: string, layerName: string) => void;
   onToast: (msg: string, type: 'success' | 'error' | 'info') => void;
 }
+
+const ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'];
+const RESOLUTION_OPTIONS: Array<{ value: ResolutionMode; label: string }> = [
+  { value: '1K', label: '1K' },
+  { value: '2K', label: '2K' },
+  { value: '4K', label: '4K' },
+];
 
 export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
   isOpen,
   onClose,
   baseImage,
-  apiConfig,
-  models,
-  aspectRatio: initialRatio,
-  resolutionMode: initialRes,
+  endpoints,
+  activeEndpointId,
+  onSelectEndpoint,
+  initialAspectRatio,
   onAddLayer,
   onToast,
 }) => {
   // 当前步骤：1 = 场照除杂, 2 = 角色识别与道具设计, 3 = 最终布景成图
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  // 参数配置
-  const [selectedModel, setSelectedModel] = useState<string>(apiConfig.selectedModel);
-  const [visionModel, setVisionModel] = useState<string>('tsc1-gpt-5.6-sol');
-  const [aspectRatio, setAspectRatio] = useState<string>(initialRatio);
-  const [resolutionMode, setResolutionMode] = useState<'1K' | '2K' | '4K'>(initialRes);
+  // 线路与模型配置
+  const [currentEndpointId, setCurrentEndpointId] = useState<string>(activeEndpointId);
+  const activeEndpoint = endpoints.find((ep) => ep.id === currentEndpointId) || endpoints[0];
+
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    return activeEndpoint?.selectedModel || storageService.getLastImageModel() || activeEndpoint?.models[0] || '[yu]gemini-3.1-flash-lite-image';
+  });
+
+  const [visionModel, setVisionModel] = useState<string>(() => {
+    return activeEndpoint?.selectedVisionModel || storageService.getLastVisionModel() || 'tsc1-gpt-5.6-sol';
+  });
+
+  // 画幅比例自适应与记忆
+  const [aspectRatio, setAspectRatio] = useState<string>(() => initialAspectRatio || storageService.getLastAspectRatio() || '1:1');
+  const [autoDetectedRatio, setAutoDetectedRatio] = useState<string | null>(null);
+
+  // 分辨率选择与记忆 (2K/4K)
+  const [resolutionMode, setResolutionMode] = useState<ResolutionMode>(() => storageService.getLastResolution() || '2K');
 
   // 图像状态流转
   const [cleanedImage, setCleanedImage] = useState<string>(''); // 步骤1除杂后的图片
@@ -67,21 +89,75 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
   const [groundProps, setGroundProps] = useState<string>('');
   const [floatingElements, setFloatingElements] = useState<string>('');
   const [characterAttr, setCharacterAttr] = useState<string>('');
+  const [hasRecognized, setHasRecognized] = useState<boolean>(false);
 
-  // 初始化 visionModel 默认值
+  // 当导入基准图变化时，自动计算自然尺寸并锁定画幅比例（如 4000x6000 -> 2:3）
   useEffect(() => {
-    if (models.includes('tsc1-gpt-5.6-sol')) {
-      setVisionModel('tsc1-gpt-5.6-sol');
-    } else {
-      const match = models.find((m) => m.includes('sol') || m.includes('gpt') || m.includes('gemini'));
-      if (match) setVisionModel(match);
+    if (baseImage) {
+      const img = new Image();
+      img.onload = () => {
+        if (img.naturalWidth && img.naturalHeight) {
+          const detected = detectClosestAspectRatio(img.naturalWidth, img.naturalHeight);
+          setAspectRatio(detected);
+          setAutoDetectedRatio(detected);
+          storageService.saveLastAspectRatio(detected);
+        }
+      };
+      img.src = baseImage;
     }
-  }, [models]);
+  }, [baseImage]);
+
+  // 同步外部线路变化
+  useEffect(() => {
+    if (activeEndpointId && activeEndpointId !== currentEndpointId) {
+      setCurrentEndpointId(activeEndpointId);
+    }
+  }, [activeEndpointId]);
 
   if (!isOpen) return null;
 
   // 获取当前正在处理的参考图（如果做完除杂则用除杂图，否则用原图）
   const activeWorkingImage = cleanedImage || baseImage;
+
+  // 线路与模型联动修改处理
+  const handleEndpointChange = (newId: string) => {
+    setCurrentEndpointId(newId);
+    onSelectEndpoint(newId);
+    const target = endpoints.find((ep) => ep.id === newId);
+    if (target) {
+      if (target.selectedModel) {
+        setSelectedModel(target.selectedModel);
+        storageService.saveLastImageModel(target.selectedModel);
+      } else if (target.models?.length) {
+        setSelectedModel(target.models[0]);
+        storageService.saveLastImageModel(target.models[0]);
+      }
+      if (target.selectedVisionModel) {
+        setVisionModel(target.selectedVisionModel);
+        storageService.saveLastVisionModel(target.selectedVisionModel);
+      }
+    }
+  };
+
+  const handleImageModelChange = (model: string) => {
+    setSelectedModel(model);
+    storageService.saveLastImageModel(model);
+  };
+
+  const handleVisionModelChange = (model: string) => {
+    setVisionModel(model);
+    storageService.saveLastVisionModel(model);
+  };
+
+  const handleResolutionChange = (res: ResolutionMode) => {
+    setResolutionMode(res);
+    storageService.saveLastResolution(res);
+  };
+
+  const handleRatioChange = (ratio: string) => {
+    setAspectRatio(ratio);
+    storageService.saveLastAspectRatio(ratio);
+  };
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 步骤 1：执行场照除杂
@@ -94,8 +170,8 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
     try {
       const { dimensionStr } = calculateDimensions(aspectRatio, resolutionMode);
       const res = await apiService.generateImageToImage({
-        baseUrl: apiConfig.baseUrl,
-        apiKey: apiConfig.apiKey,
+        baseUrl: activeEndpoint.baseUrl,
+        apiKey: activeEndpoint.apiKey,
         model: selectedModel,
         prompt: DECLUTTER_PRESET.prompt,
         inputImageBase64: baseImage,
@@ -104,7 +180,7 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
       });
 
       setCleanedImage(res);
-      // 保存至图层
+      // 保存至主工作台图层面板
       onAddLayer(res, '半合成·场照除杂');
       onToast('场照除杂成功！已自动存入图层面板', 'success');
     } catch (err: any) {
@@ -135,8 +211,8 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
 
     try {
       const rawResponse = await apiService.callVisionChat({
-        baseUrl: apiConfig.baseUrl,
-        apiKey: apiConfig.apiKey,
+        baseUrl: activeEndpoint.baseUrl,
+        apiKey: activeEndpoint.apiKey,
         model: visionModel,
         prompt: promptText,
         inputImageBase64: activeWorkingImage,
@@ -149,6 +225,7 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
       setGroundProps(parsed.groundProps || '主题写实落地道具摆件');
       setFloatingElements(parsed.floatingElements || '无悬浮特效实体物件');
       setCharacterAttr(parsed.characterAttr || '英气唯美的Cosplay角色');
+      setHasRecognized(true);
 
       onToast('角色识别与布景顾问设计已完成，可自由编辑！', 'success');
     } catch (err: any) {
@@ -218,8 +295,8 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
     try {
       const { dimensionStr } = calculateDimensions(aspectRatio, resolutionMode);
       const res = await apiService.generateImageToImage({
-        baseUrl: apiConfig.baseUrl,
-        apiKey: apiConfig.apiKey,
+        baseUrl: activeEndpoint.baseUrl,
+        apiKey: activeEndpoint.apiKey,
         model: selectedModel,
         prompt: fullScenePrompt,
         inputImageBase64: activeWorkingImage,
@@ -229,7 +306,7 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
 
       setFinalImage(res);
       setStep(3);
-      // 保存至图层
+      // 保存至图层面板
       onAddLayer(res, `半合成·${character || '布景完成'}`);
       onToast('最终布景成图已生成，并自动存入图层！', 'success');
     } catch (err: any) {
@@ -252,7 +329,7 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
           <div>
             <h3 className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
               <span>半合成流水线</span>
-              <span className="text-[10px] px-1.5 py-0.2 bg-pink-100 text-pink-700 rounded-full font-mono">
+              <span className="text-[10px] px-1.5 py-0.2 bg-pink-100 text-pink-700 rounded-full font-mono font-bold">
                 步骤 {step} / 3
               </span>
             </h3>
@@ -274,12 +351,12 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
 
       {/* 中间主内容区（带滚动） */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3 no-scrollbar max-w-lg mx-auto w-full">
-        {/* 顶部图片预览区 */}
-        <div className="relative w-full max-h-[38vh] aspect-square mx-auto glass-panel p-1.5 rounded-3xl shadow-lg border border-pink-200/60 overflow-hidden flex items-center justify-center checkerboard-bg">
+        {/* 顶部图片预览区：移除硬编码的 aspect-square，自适应原图竖向或横向比例 */}
+        <div className="relative w-full max-h-[36vh] min-h-[180px] mx-auto glass-panel p-2 rounded-3xl shadow-lg border border-pink-200/60 overflow-hidden flex items-center justify-center checkerboard-bg">
           <img
             src={step === 3 && finalImage ? finalImage : activeWorkingImage}
             alt="处理预览"
-            className="max-w-full max-h-full object-contain rounded-2xl"
+            className="max-h-[34vh] w-auto max-w-full object-contain rounded-2xl shadow-sm transition-all"
           />
 
           {/* 加载提示蒙层 */}
@@ -291,11 +368,19 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
             </div>
           )}
 
-          {/* 图像状态微标签 */}
-          <div className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-xs text-[9px] text-white font-medium">
-            {step === 1 && (cleanedImage ? '已除杂预览' : '原图')}
-            {step === 2 && (cleanedImage ? '使用除杂图' : '使用原图')}
-            {step === 3 && '最终布景图'}
+          {/* 图像状态与比例微标签 */}
+          <div className="absolute bottom-2 left-2 flex items-center space-x-1.5">
+            <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-xs text-[9px] text-white font-medium">
+              {step === 1 && (cleanedImage ? '已除杂预览' : '原图')}
+              {step === 2 && (cleanedImage ? '使用除杂图' : '使用原图')}
+              {step === 3 && (finalImage ? '最终布景图' : '待生成')}
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-pink-600/80 backdrop-blur-xs text-[9px] text-white font-mono font-bold">
+              {aspectRatio}
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-slate-800/80 backdrop-blur-xs text-[9px] text-white font-bold">
+              {resolutionMode}
+            </span>
           </div>
         </div>
 
@@ -303,23 +388,102 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
         {/* 步骤 1 视图：场照除杂 */}
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {step === 1 && (
-          <div className="space-y-3">
-            {/* 选项参数配置 */}
+          <div className="space-y-2.5 animate-in fade-in duration-200">
+            {/* 选项参数配置卡 */}
             <div className="glass-panel p-3 rounded-2xl space-y-2 border border-pink-200/50">
-              <div className="flex items-center space-x-2">
-                <span className="text-[11px] font-bold text-pink-700 flex items-center space-x-1 shrink-0">
-                  <Cpu className="w-3.5 h-3.5 text-pink-500" />
-                  <span>图像模型:</span>
-                </span>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="w-full glass-input px-2 py-1 rounded-xl text-xs"
-                >
-                  {models.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
+              {/* API 线路与图像模型并排选择 */}
+              <div className="grid grid-cols-2 gap-2">
+                {/* API 线路 */}
+                <div className="flex items-center space-x-1 min-w-0">
+                  <span className="text-[10px] font-bold text-pink-700 flex items-center space-x-0.5 shrink-0">
+                    <Globe className="w-3 h-3 text-pink-500" />
+                    <span>线路:</span>
+                  </span>
+                  <div className="relative flex-1 min-w-0">
+                    <select
+                      value={currentEndpointId}
+                      onChange={(e) => handleEndpointChange(e.target.value)}
+                      className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-semibold text-pink-700 pr-5 truncate"
+                    >
+                      {endpoints.map((ep) => (
+                        <option key={ep.id} value={ep.id}>{ep.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-pink-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 图像模型 */}
+                <div className="flex items-center space-x-1 min-w-0">
+                  <span className="text-[10px] font-bold text-pink-700 flex items-center space-x-0.5 shrink-0">
+                    <Cpu className="w-3 h-3 text-pink-500" />
+                    <span>模型:</span>
+                  </span>
+                  <div className="relative flex-1 min-w-0">
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => handleImageModelChange(e.target.value)}
+                      className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs text-slate-800 pr-5 truncate"
+                    >
+                      {activeEndpoint.models.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+
+              {/* 画面比例与分辨率快速切换 */}
+              <div className="flex items-center justify-between pt-1 border-t border-pink-100 gap-2">
+                {/* 比例选择 */}
+                <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar py-0.5">
+                  <span className="text-[10px] text-slate-500 font-medium shrink-0 flex items-center">
+                    <Ratio className="w-3 h-3 text-pink-500 mr-0.5" /> 比例:
+                  </span>
+                  {ASPECT_RATIOS.map((ratio) => {
+                    const isSelected = aspectRatio === ratio;
+                    const isAuto = autoDetectedRatio === ratio;
+                    return (
+                      <button
+                        key={ratio}
+                        type="button"
+                        onClick={() => handleRatioChange(ratio)}
+                        className={`px-1.5 py-0.5 rounded-md text-[9px] font-semibold shrink-0 transition-all ${
+                          isSelected
+                            ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
+                            : 'bg-white/70 hover:bg-pink-100 text-slate-600 border border-pink-100'
+                        }`}
+                      >
+                        {ratio}
+                        {isAuto && <span className="ml-0.5 text-[7px] text-pink-200">原图</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* 分辨率 1K / 2K / 4K 模式 */}
+                <div className="flex items-center space-x-1 shrink-0">
+                  <span className="text-[10px] text-slate-500 font-medium flex items-center">
+                    <Maximize2 className="w-3 h-3 text-pink-500 mr-0.5" /> 分辨率:
+                  </span>
+                  <div className="flex bg-pink-100/60 p-0.5 rounded-lg border border-pink-200/50">
+                    {RESOLUTION_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => handleResolutionChange(opt.value)}
+                        className={`px-1.5 py-0.2 rounded-md text-[9px] font-bold transition-all ${
+                          resolutionMode === opt.value
+                            ? 'bg-white text-pink-600 shadow-xs'
+                            : 'text-slate-600 hover:text-pink-600'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* 预设信息提示卡 */}
@@ -345,14 +509,11 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                   </button>
 
                   <button
-                    onClick={() => {
-                      setStep(2);
-                      handleRunRoleRecognition();
-                    }}
+                    onClick={() => setStep(2)}
                     disabled={isProcessing}
                     className="px-4 py-3 rounded-2xl bg-white/80 hover:bg-pink-100 text-slate-700 font-bold text-xs border border-pink-200 shadow-xs flex items-center space-x-1 active:scale-98"
                   >
-                    <span>跳过</span>
+                    <span>下一步/跳过</span>
                     <ArrowRight className="w-3.5 h-3.5 text-pink-500" />
                   </button>
                 </div>
@@ -369,16 +530,11 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                   </button>
 
                   <button
-                    onClick={() => {
-                      setStep(2);
-                      if (!character) {
-                        handleRunRoleRecognition();
-                      }
-                    }}
+                    onClick={() => setStep(2)}
                     disabled={isProcessing}
                     className="flex-[1.5] py-3 px-3 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 text-white font-bold text-xs shadow-md shadow-pink-300/60 flex items-center justify-center space-x-1.5 active:scale-98"
                   >
-                    <span>下一步：识别角色与布景</span>
+                    <span>下一步：选择模型与识别角色</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -392,32 +548,59 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {step === 2 && (
           <div className="space-y-3 animate-in fade-in duration-200">
-            {/* 顾问模型切换 */}
-            <div className="glass-panel p-2.5 rounded-2xl border border-pink-200/50 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-700 flex items-center space-x-1">
-                  <Sparkles className="w-3.5 h-3.5 text-pink-500" />
-                  <span>视觉分析模型 (Vision LLM):</span>
-                </span>
-                <button
-                  onClick={handleRunRoleRecognition}
-                  disabled={isProcessing}
-                  className="px-2.5 py-0.5 rounded-full bg-pink-100 hover:bg-pink-200 text-pink-700 text-[10px] font-bold flex items-center space-x-1"
-                >
-                  <RotateCcw className={`w-3 h-3 ${isProcessing ? 'animate-spin' : ''}`} />
-                  <span>再次识别</span>
-                </button>
+            {/* 视觉分析模型 (Vision LLM) 自由选择卡 */}
+            <div className="glass-panel p-2.5 rounded-2xl border border-pink-200/50 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                {/* 线路选择 */}
+                <div className="flex items-center space-x-1 min-w-0">
+                  <span className="text-[10px] font-bold text-slate-700 flex items-center space-x-0.5 shrink-0">
+                    <Globe className="w-3 h-3 text-pink-500" />
+                    <span>线路:</span>
+                  </span>
+                  <div className="relative flex-1 min-w-0">
+                    <select
+                      value={currentEndpointId}
+                      onChange={(e) => handleEndpointChange(e.target.value)}
+                      className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-semibold text-pink-700 pr-5 truncate"
+                    >
+                      {endpoints.map((ep) => (
+                        <option key={ep.id} value={ep.id}>{ep.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-pink-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 视觉模型选择 */}
+                <div className="flex items-center space-x-1 min-w-0">
+                  <span className="text-[10px] font-bold text-slate-700 flex items-center space-x-0.5 shrink-0">
+                    <Sparkles className="w-3 h-3 text-pink-500" />
+                    <span>LLM模型:</span>
+                  </span>
+                  <div className="relative flex-1 min-w-0">
+                    <select
+                      value={visionModel}
+                      onChange={(e) => handleVisionModelChange(e.target.value)}
+                      className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-mono text-slate-800 pr-5 truncate"
+                    >
+                      {activeEndpoint.models.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
               </div>
 
-              <select
-                value={visionModel}
-                onChange={(e) => setVisionModel(e.target.value)}
-                className="w-full glass-input px-2.5 py-1.5 rounded-xl text-xs font-mono"
+              {/* 启动识别按钮：点击之后才开始识别 */}
+              <button
+                onClick={handleRunRoleRecognition}
+                disabled={isProcessing}
+                className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 text-white text-xs font-bold shadow-md shadow-pink-300/50 flex items-center justify-center space-x-1.5 active:scale-98 disabled:opacity-50"
               >
-                {models.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+                <Sparkles className={`w-3.5 h-3.5 ${isProcessing ? 'animate-spin' : ''}`} />
+                <span>{character ? '重新识别角色与布景' : '开始识别角色与布景'}</span>
+              </button>
             </div>
 
             {/* 六项核心内容独立编辑框 */}
@@ -426,7 +609,9 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                 <span className="text-xs font-bold text-slate-800">
                   角色与布景参数 (六项自由编辑)
                 </span>
-                <span className="text-[9px] text-pink-500">可手动随时微调</span>
+                <span className="text-[9px] text-pink-500 font-medium">
+                  {character ? '已填充，可自由微调' : '点击上方「开始识别」或手动填写'}
+                </span>
               </div>
 
               {/* 1. 角色名 */}
@@ -525,52 +710,155 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
               </button>
 
               <button
-                onClick={handleRunSceneSynthesis}
-                disabled={isProcessing}
-                className="flex-1 py-3 px-3 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 disabled:opacity-40 text-white font-bold text-xs shadow-md shadow-pink-300/60 flex items-center justify-center space-x-1.5 active:scale-98"
+                onClick={() => setStep(3)}
+                className="flex-1 py-3 px-3 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 text-white font-bold text-xs shadow-md shadow-pink-300/60 flex items-center justify-center space-x-1.5 active:scale-98"
               >
-                <Wand2 className="w-4 h-4" />
-                <span>开始全写实现场布景生图</span>
+                <span>下一步：确认布景并生图</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         )}
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        {/* 步骤 3 视图：成图查看与后续操作 */}
+        {/* 步骤 3 视图：最终落地布景生图 */}
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {step === 3 && (
           <div className="space-y-3 animate-in fade-in duration-200">
-            <div className="p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-[11px] text-emerald-800 flex items-center space-x-2">
-              <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>布景图片已成功生成，并已自动添加至画布图层栈中！</span>
+            {/* 生图参数确认卡片 */}
+            <div className="glass-panel p-3 rounded-2xl space-y-2 border border-pink-200/50">
+              <div className="grid grid-cols-2 gap-2">
+                {/* 线路选择 */}
+                <div className="flex items-center space-x-1 min-w-0">
+                  <span className="text-[10px] font-bold text-pink-700 flex items-center space-x-0.5 shrink-0">
+                    <Globe className="w-3 h-3 text-pink-500" />
+                    <span>线路:</span>
+                  </span>
+                  <div className="relative flex-1 min-w-0">
+                    <select
+                      value={currentEndpointId}
+                      onChange={(e) => handleEndpointChange(e.target.value)}
+                      className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-semibold text-pink-700 pr-5 truncate"
+                    >
+                      {endpoints.map((ep) => (
+                        <option key={ep.id} value={ep.id}>{ep.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-pink-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 生图模型 */}
+                <div className="flex items-center space-x-1 min-w-0">
+                  <span className="text-[10px] font-bold text-pink-700 flex items-center space-x-0.5 shrink-0">
+                    <Cpu className="w-3 h-3 text-pink-500" />
+                    <span>模型:</span>
+                  </span>
+                  <div className="relative flex-1 min-w-0">
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => handleImageModelChange(e.target.value)}
+                      className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs text-slate-800 pr-5 truncate"
+                    >
+                      {activeEndpoint.models.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+
+              {/* 比例与分辨率展示与切换 */}
+              <div className="flex items-center justify-between pt-1 border-t border-pink-100 gap-2">
+                <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar py-0.5">
+                  <span className="text-[10px] text-slate-500 font-medium shrink-0 flex items-center">
+                    <Ratio className="w-3 h-3 text-pink-500 mr-0.5" /> 比例:
+                  </span>
+                  {ASPECT_RATIOS.map((ratio) => (
+                    <button
+                      key={ratio}
+                      type="button"
+                      onClick={() => handleRatioChange(ratio)}
+                      className={`px-1.5 py-0.5 rounded-md text-[9px] font-semibold shrink-0 transition-all ${
+                        aspectRatio === ratio
+                          ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
+                          : 'bg-white/70 hover:bg-pink-100 text-slate-600 border border-pink-100'
+                      }`}
+                    >
+                      {ratio}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center space-x-1 shrink-0">
+                  <span className="text-[10px] text-slate-500 font-medium flex items-center">
+                    <Maximize2 className="w-3 h-3 text-pink-500 mr-0.5" /> 分辨率:
+                  </span>
+                  <div className="flex bg-pink-100/60 p-0.5 rounded-lg border border-pink-200/50">
+                    {RESOLUTION_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => handleResolutionChange(opt.value)}
+                        className={`px-1.5 py-0.2 rounded-md text-[9px] font-bold transition-all ${
+                          resolutionMode === opt.value
+                            ? 'bg-white text-pink-600 shadow-xs'
+                            : 'text-slate-600 hover:text-pink-600'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 提示概要 */}
+              <div className="p-2 rounded-xl bg-pink-50/60 border border-pink-100 text-[10px] text-slate-600">
+                <span className="font-bold text-pink-600">角色: {character || '未指定'}</span>
+                <p className="text-[9px] text-slate-500 mt-0.5 truncate">
+                  主题: {sceneTheme || '写实漫展布景'} | 道具: {groundProps || '写实地表摆件'}
+                </p>
+              </div>
             </div>
 
+            {/* 如果已生成成图 */}
+            {finalImage && (
+              <div className="p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-[11px] text-emerald-800 flex items-center space-x-2">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>布景大片已成功生成，并已自动添加至工作台图层列表中！</span>
+              </div>
+            )}
+
+            {/* 生图与导航按钮 */}
             <div className="flex space-x-2 pt-1">
               <button
                 onClick={() => setStep(2)}
-                className="flex-1 py-3 px-2 rounded-2xl bg-white/85 hover:bg-pink-100 text-slate-700 font-bold text-xs border border-pink-200 shadow-xs flex items-center justify-center space-x-1"
+                className="px-4 py-3 rounded-2xl bg-white/80 hover:bg-pink-100 text-slate-700 font-bold text-xs border border-pink-200 shadow-xs flex items-center space-x-1 shrink-0"
               >
                 <ArrowLeft className="w-3.5 h-3.5 text-pink-500" />
-                <span>修改布景内容</span>
+                <span>修改布景</span>
               </button>
 
               <button
                 onClick={handleRunSceneSynthesis}
                 disabled={isProcessing}
-                className="flex-1 py-3 px-2 rounded-2xl bg-pink-100 hover:bg-pink-200 text-pink-700 font-bold text-xs border border-pink-200 shadow-xs flex items-center justify-center space-x-1"
+                className="flex-1 py-3 px-3 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 disabled:opacity-40 text-white font-bold text-xs shadow-md shadow-pink-300/60 flex items-center justify-center space-x-1.5 active:scale-98"
               >
-                <RotateCcw className="w-3.5 h-3.5 text-pink-600" />
-                <span>重新生图</span>
+                <Wand2 className="w-4 h-4" />
+                <span>{finalImage ? '重新生图' : '开始全写实现场布景生图'}</span>
               </button>
 
-              <button
-                onClick={onClose}
-                className="flex-1 py-3 px-2 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-400 text-white font-bold text-xs shadow-md shadow-pink-300/50 flex items-center justify-center space-x-1"
-              >
-                <Check className="w-4 h-4" />
-                <span>完成返回工作台</span>
-              </button>
+              {finalImage && (
+                <button
+                  onClick={onClose}
+                  className="px-4 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs shadow-md shadow-emerald-200 flex items-center space-x-1 shrink-0 active:scale-98"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>完成</span>
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -578,3 +866,4 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
     </div>
   );
 };
+
