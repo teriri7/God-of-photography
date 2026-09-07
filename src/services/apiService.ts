@@ -192,4 +192,115 @@ export const apiService = {
 
     return null;
   },
+
+  /**
+   * 调用多模态大模型进行角色识别与布景设计顾问（输出结构化文本/JSON）
+   */
+  async callVisionChat(params: {
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+    prompt: string;
+    inputImageBase64: string;
+  }): Promise<string> {
+    const { baseUrl, apiKey, model, prompt, inputImageBase64 } = params;
+    const cleanUrl = baseUrl.trim().replace(/\/+$/, '');
+    const cleanKey = apiKey.trim();
+
+    const chatEndpoint = `${cleanUrl}/v1/chat/completions`;
+    const chatBody = {
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: prompt,
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: inputImageBase64,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const response = await fetch(chatEndpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cleanKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(chatBody),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`角色识别失败 (${response.status}): ${errText || response.statusText}`);
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '';
+    if (!content) {
+      throw new Error('模型未返回任何识别结果');
+    }
+    return content;
+  },
+
+  /**
+   * 解析模型返回的角色与布景顾问 JSON
+   */
+  parseRoleRecognitionJson(rawText: string): {
+    character: string;
+    sceneTheme: string;
+    groundEffect: string;
+    groundProps: string;
+    floatingElements: string;
+    characterAttr: string;
+  } {
+    let cleanJson = rawText.trim();
+    // 剔除 markdown ```json ... ```
+    const fenceMatch = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (fenceMatch && fenceMatch[1]) {
+      cleanJson = fenceMatch[1].trim();
+    } else {
+      // 提取最外层的 { ... }
+      const braceMatch = cleanJson.match(/\{[\s\S]*\}/);
+      if (braceMatch) {
+        cleanJson = braceMatch[0].trim();
+      }
+    }
+
+    try {
+      const obj = JSON.parse(cleanJson);
+      return {
+        character: obj.character || obj['角色'] || '',
+        sceneTheme: obj['布景主题'] || obj.sceneTheme || obj.theme || '',
+        groundEffect: obj['地面效果'] || obj.groundEffect || '',
+        groundProps: obj['地面道具'] || obj.groundProps || '',
+        floatingElements: obj['浮空元素'] || obj.floatingElements || '',
+        characterAttr: obj['角色属性'] || obj.characterAttr || obj.attribute || '',
+      };
+    } catch (e) {
+      console.warn('JSON 直接解析失败，尝试正则提取字段:', e);
+      // 正则兜底匹配每个键
+      const getVal = (key: string) => {
+        const regex = new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`);
+        const match = rawText.match(regex);
+        return match ? match[1] : '';
+      };
+      return {
+        character: getVal('character') || getVal('角色'),
+        sceneTheme: getVal('布景主题'),
+        groundEffect: getVal('地面效果'),
+        groundProps: getVal('地面道具'),
+        floatingElements: getVal('浮空元素'),
+        characterAttr: getVal('角色属性'),
+      };
+    }
+  },
 };

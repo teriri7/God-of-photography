@@ -1,4 +1,4 @@
-﻿import { ApiConfig, PromptPreset } from '../types';
+import { ApiConfig, PromptPreset } from '../types';
 
 const STORAGE_KEYS = {
   API_CONFIG: 'pinklayer_api_config',
@@ -13,7 +13,16 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   selectedModel: '[yu]gemini-3.1-flash-lite-image',
 };
 
+export const DECLUTTER_PRESET: PromptPreset = {
+  id: 'preset-declutter',
+  title: '场照除杂',
+  subtitle: '摄影修图师级智能去除路人/灯架/反光板/杂物并无缝背景修补',
+  prompt: '{"role":"摄影后期修图师","base_rules":{"preserve_composition":true,"preserve_model":"严禁改变模特的动作、表情、服装、肤色","preserve_background_structure":"保证背景除杂物外的建筑框架、地面、墙体结构完全不变","preserve_global_hsl_gamma":true,"no_scale_rotate_translate":true},"detection":{"identify_clutter":"自动识别画面中不属于场景原有结构的穿帮元素：路人/观众/围观者、摄影灯/灯架/灯罩/反光板/柔光箱、三脚架/摄影包/水瓶等工作人员物品、地面电线/胶带标记","identify_background":"分析背景材质类型(墙面/地面/植被/天空)、纹理模式、光影方向，用于修补参考"},"removal_operations":{"people_removal":{"action":"完全移除背景中所有路人和工作人员","inpaint":"移除区域使用周围背景材质智能填充，纹理方向、透视比例、光影明暗与邻近区域完全一致"},"equipment_removal":{"action":"移除所有摄影设备(灯架/灯罩/反光板/线缆/标记胶带)","light_preservation":"移除灯具后不改变其光照效果——灯的光源效果保留，只移除灯具实体","inpaint":"设备遮挡区域使用场景原有材质(墙面砖纹/地面纹理/植物)精确重建"},"debris_removal":{"action":"移除地面零散杂物(垃圾/落叶堆/水瓶/其他不相关物品)","ground_rebuild":"地面修补区域与周围地砖/地板/草地纹理无缝衔接"}},"quality_control":{"texture_match":"所有修补区域的材质纹理(砖缝/木纹/草地)方向和密度与周围完全匹配","light_match":"修补区域的光影渐变与原图一致，无突兀的亮斑或暗区","perspective_match":"修补纹理的透视缩放与场景消失点一致","edge_blend":"修补区域边缘与周围无缝融合，无可见AI修补痕迹","noise_match":"修补区域噪点颗粒度与原图完全一致"}}',
+  iconName: 'Wand2',
+};
+
 export const DEFAULT_PRESETS: PromptPreset[] = [
+  DECLUTTER_PRESET,
   {
     id: 'preset-anime',
     title: '二次元立绘',
@@ -89,7 +98,12 @@ export const storageService = {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.PRESETS);
       if (data) {
-        return JSON.parse(data);
+        const parsed: PromptPreset[] = JSON.parse(data);
+        const exists = parsed.some((p) => p.id === 'preset-declutter');
+        if (!exists) {
+          return [DECLUTTER_PRESET, ...parsed];
+        }
+        return parsed;
       }
     } catch (e) {
       console.error('Failed to load presets:', e);

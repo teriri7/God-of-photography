@@ -10,6 +10,7 @@ import { CanvasViewport } from './components/CanvasViewport';
 import { CollapsibleEditorSection } from './components/CollapsibleEditorSection';
 import { PresetBar } from './components/PresetBar';
 import { PresetModal } from './components/PresetModal';
+import { SemiSynthesisModal } from './components/SemiSynthesisModal';
 import { ControlBar } from './components/ControlBar';
 import { ApiSettingsModal } from './components/ApiSettingsModal';
 import { PhoneSimulatorFrame } from './components/PhoneSimulatorFrame';
@@ -21,8 +22,8 @@ export const App: React.FC = () => {
   const [presets, setPresets] = useState<PromptPreset[]>(() => storageService.getPresets());
   const [isSimulator, setIsSimulator] = useState<boolean>(() => storageService.getSimulatorMode());
 
-  // 2. 主页面交互状态
-  const [selectedPresetId, setSelectedPresetId] = useState<string>(presets[0]?.id || 'preset-anime');
+  // 2. 主页面交互状态 (默认选用首个预设「场照除杂」)
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(() => presets[0]?.id || 'preset-declutter');
   const [customPrompt, setCustomPrompt] = useState<string>('');
   const [aspectRatio, setAspectRatio] = useState<string>('1:1');
   const [autoDetectedRatio, setAutoDetectedRatio] = useState<string | null>(null);
@@ -34,6 +35,7 @@ export const App: React.FC = () => {
 
   // 4. 弹窗与抽屉控制
   const [isPresetModalOpen, setIsPresetModalOpen] = useState<boolean>(false);
+  const [isSemiSynthesisOpen, setIsSemiSynthesisOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   // 5. 异步操作指示器
@@ -281,6 +283,42 @@ export const App: React.FC = () => {
     showToast(`预设「${updated.title}」已保存`, 'success');
   };
 
+  const handleAddPreset = (newPreset: PromptPreset) => {
+    setPresets((prev) => [...prev, newPreset]);
+    setSelectedPresetId(newPreset.id);
+    showToast(`预设「${newPreset.title}」已添加并选定`, 'success');
+  };
+
+  const handleDeletePreset = (id: string) => {
+    setPresets((prev) => prev.filter((p) => p.id !== id));
+    if (selectedPresetId === id) {
+      setSelectedPresetId(presets[0]?.id || 'preset-declutter');
+    }
+    showToast('预设已删除', 'info');
+  };
+
+  const handleAddGeneratedLayer = async (imageUrl: string, layerName: string) => {
+    try {
+      const img = await loadImage(imageUrl);
+      const newLayer: Layer = {
+        id: `layer-${Date.now()}`,
+        name: `图层 ${layers.length + 1} (${layerName})`,
+        visible: true,
+        opacity: 100,
+        blendMode: 'source-over',
+        sourceUrl: imageUrl,
+        width: img.width,
+        height: img.height,
+        filter: { ...DEFAULT_FILTER_SETTINGS },
+        createdAt: Date.now(),
+      };
+      setLayers((prev) => [...prev, newLayer]);
+      setActiveLayerId(newLayer.id);
+    } catch (e) {
+      console.error('Failed to add generated layer:', e);
+    }
+  };
+
   return (
     <PhoneSimulatorFrame
       isSimulator={isSimulator}
@@ -329,11 +367,17 @@ export const App: React.FC = () => {
             onUpdateFilter={handleUpdateFilter}
           />
 
-          {/* 预设条（选择预设按钮 + 并排半合成按钮） */}
+          {/* 预设条（单独放到上方的半合成卡片 + 选择预设按钮） */}
           <PresetBar
             currentPreset={presets.find((p) => p.id === selectedPresetId)}
             onOpenPresetModal={() => setIsPresetModalOpen(true)}
-            onSemiBlend={() => showToast('「半合成」功能已就绪，敬请期待后续高级图层合成！', 'info')}
+            onOpenSemiSynthesis={() => {
+              if (layers.length === 0) {
+                showToast('请先打开或导入一张图片', 'error');
+                return;
+              }
+              setIsSemiSynthesisOpen(true);
+            }}
           />
         </div>
 
@@ -355,7 +399,7 @@ export const App: React.FC = () => {
           autoDetectedRatio={autoDetectedRatio}
         />
 
-        {/* 预设二级选择模态窗 */}
+        {/* 预设二级选择模态窗（一行一个，自由添加删除） */}
         <PresetModal
           isOpen={isPresetModalOpen}
           onClose={() => setIsPresetModalOpen(false)}
@@ -366,8 +410,23 @@ export const App: React.FC = () => {
             showToast(`已选定风格预设「${p.title}」`, 'success');
           }}
           onUpdatePreset={handleUpdatePreset}
+          onAddPreset={handleAddPreset}
+          onDeletePreset={handleDeletePreset}
           customPrompt={customPrompt}
           onChangeCustomPrompt={setCustomPrompt}
+        />
+
+        {/* 半合成全流程多步全新页面 */}
+        <SemiSynthesisModal
+          isOpen={isSemiSynthesisOpen}
+          onClose={() => setIsSemiSynthesisOpen(false)}
+          baseImage={(layers.find((l) => l.id === activeLayerId) || layers[layers.length - 1])?.sourceUrl || ''}
+          apiConfig={apiConfig}
+          models={models}
+          aspectRatio={aspectRatio}
+          resolutionMode={resolutionMode}
+          onAddLayer={handleAddGeneratedLayer}
+          onToast={showToast}
         />
 
         {/* API 与模型设置模态窗 */}
