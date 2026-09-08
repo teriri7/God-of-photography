@@ -1,14 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Layer, LayerFilterSettings, DEFAULT_FILTER_SETTINGS, ApiEndpoint, PromptPreset } from './types';
+import {
+  Layer,
+  LayerFilterSettings,
+  DEFAULT_FILTER_SETTINGS,
+  LayerTransform,
+  DEFAULT_LAYER_TRANSFORM,
+  ApiEndpoint,
+  PromptPreset,
+} from './types';
 import { storageService } from './services/storageService';
 import { apiService } from './services/apiService';
-import { exportCompositeImage, loadImage } from './utils/canvasRenderer';
+import { exportCompositeImage, loadImage, bakeLayerFilter } from './utils/canvasRenderer';
 import { detectClosestAspectRatio, calculateDimensions, ResolutionMode } from './utils/ratioHelper';
 
 import { Header } from './components/Header';
 import { CanvasViewport } from './components/CanvasViewport';
 import { CollapsibleEditorSection } from './components/CollapsibleEditorSection';
-import { PresetBar } from './components/PresetBar';
 import { PresetModal } from './components/PresetModal';
 import { SemiSynthesisModal } from './components/SemiSynthesisModal';
 import { ControlBar } from './components/ControlBar';
@@ -42,13 +49,44 @@ export const App: React.FC = () => {
   // 4. 弹窗与抽屉控制
   const [isPresetModalOpen, setIsPresetModalOpen] = useState<boolean>(false);
   const [isSemiSynthesisOpen, setIsSemiSynthesisOpen] = useState<boolean>(false);
+  const [semiSynthesisBaseImage, setSemiSynthesisBaseImage] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   // 5. 编辑区域互斥状态 ('none' | 'layers' | 'tonal')
   const [expandedSection, setExpandedSection] = useState<'none' | 'layers' | 'tonal'>('none');
 
-  const handleToggleSection = (section: 'layers' | 'tonal') => {
+  // 将当前活跃图层（或指定图层）的影调滤镜固化（Bake）到底层像素位图，并重置滑杆为 0
+  const handleBakeCurrentFilter = async (): Promise<Layer[] | null> => {
+    const target = layers.find((l) => l.id === activeLayerId) || layers[layers.length - 1];
+    if (!target) return null;
+    const isModified = Object.entries(target.filter).some(([k, v]) => {
+      return (DEFAULT_FILTER_SETTINGS as any)[k] !== v;
+    });
+    if (!isModified) return layers;
+
+    try {
+      const baked = await bakeLayerFilter(target);
+      const updated = layers.map((l) => (l.id === baked.id ? baked : l));
+      setLayers(updated);
+      showToast(`已将影调调整永久应用至「${target.name}」`, 'success');
+      return updated;
+    } catch (err) {
+      console.error('Bake filter error:', err);
+      return layers;
+    }
+  };
+
+  const handleToggleSection = async (section: 'layers' | 'tonal') => {
+    if (expandedSection === 'tonal') {
+      await handleBakeCurrentFilter();
+    }
     setExpandedSection((prev) => (prev === section ? 'none' : section));
+  };
+
+  const handleUpdateLayerTransform = (id: string, transform: LayerTransform) => {
+    setLayers((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, transform } : l))
+    );
   };
 
   // 6. 异步操作指示器
@@ -183,8 +221,20 @@ export const App: React.FC = () => {
       return;
     }
 
-    // 取得当前活跃图层或顶层图层作为参考图
-    const targetLayer = layers.find((l) => l.id === activeLayerId) || layers[layers.length - 1];
+    // 自动烘焙固化当前未收起的影调参数
+    const currentLayers = (await handleBakeCurrentFilter()) || layers;
+
+    // 关键：导出所有可见图层、贴纸移动/缩放与调色后的完整合成图，保证所见即所得生图
+    let baseInputUrl = '';
+    try {
+      const { dataUrl } = await exportCompositeImage(currentLayers, 'image/png');
+      baseInputUrl = dataUrl;
+    } catch (e) {
+      console.error('导出画布合成图失败，使用顶层图层回退:', e);
+      const targetLayer = currentLayers.find((l) => l.id === activeLayerId) || currentLayers[currentLayers.length - 1];
+      baseInputUrl = targetLayer.sourceUrl;
+    }
+
     const currentPreset = presets.find((p) => p.id === selectedPresetId);
     const combinedPrompt = [currentPreset?.prompt, customPrompt].filter(Boolean).join('，');
 
@@ -201,7 +251,7 @@ export const App: React.FC = () => {
         apiKey: activeEndpoint.apiKey,
         model: selectedModel,
         prompt: combinedPrompt,
-        inputImageBase64: targetLayer.sourceUrl,
+        inputImageBase64: baseInputUrl,
         resolution: formattedResolution,
         aspectRatio,
       });
@@ -258,6 +308,24 @@ export const App: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
+  };
+
+  // 打开半合成全流程并基于全图层最新所见即所得画面
+  const handleOpenSemiSynthesis = async () => {
+    if (layers.length === 0) {
+      showToast('请先选择或导入一张图片', 'error');
+      return;
+    }
+    const currentLayers = (await handleBakeCurrentFilter()) || layers;
+    try {
+      const { dataUrl } = await exportCompositeImage(currentLayers, 'image/png');
+      setSemiSynthesisBaseImage(dataUrl);
+    } catch (err) {
+      console.error('合成半合成基准图失败:', err);
+      const targetLayer = currentLayers.find((l) => l.id === activeLayerId) || currentLayers[currentLayers.length - 1];
+      setSemiSynthesisBaseImage(targetLayer?.sourceUrl || '');
+    }
+    setIsSemiSynthesisOpen(true);
   };
 
   // 图层操作
@@ -402,7 +470,7 @@ export const App: React.FC = () => {
 
         {/* 中间主滚动视图 */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar flex flex-col justify-start pb-2">
-          {/* 画布预览视窗 (展开图层或影调时平滑自适应缩小至 60% 紧凑模式) */}
+          {/* 画布预览视窗 (展开图层或影调时平滑自适应缩小至 80% 紧凑模式) */}
           <CanvasViewport
             layers={layers}
             isGenerating={isGenerating}
@@ -410,31 +478,14 @@ export const App: React.FC = () => {
             activeLayerId={activeLayerId}
             aspectRatio={aspectRatio}
             isCompact={expandedSection !== 'none'}
+            onUpdateLayerTransform={handleUpdateLayerTransform}
           />
 
-          {/* 预设与半合成栏（位于图片正下方；展开图层/影调时自动平滑收起以留足调色空间） */}
-          <div
-            className={`transition-all duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${
-              expandedSection === 'none'
-                ? 'max-h-48 opacity-100 transform translate-y-0 pointer-events-auto'
-                : 'max-h-0 opacity-0 -translate-y-2 pointer-events-none'
-            }`}
-          >
-            <PresetBar
-              currentPreset={presets.find((p) => p.id === selectedPresetId)}
-              onOpenPresetModal={() => setIsPresetModalOpen(true)}
-              onOpenSemiSynthesis={() => {
-                if (layers.length === 0) {
-                  showToast('请先打开或导入一张图片', 'error');
-                  return;
-                }
-                setIsSemiSynthesisOpen(true);
-              }}
-            />
-          </div>
-
-          {/* 折叠式图层管理与 Camera Raw 影调面板 (互斥展开联动) */}
+          {/* 功能菜单栏列表（统一管理半合成、风格预设、图层调整、画面影调，支持上下拉动流畅滚动浏览，方便未来自由扩展更多功能栏） */}
           <CollapsibleEditorSection
+            onOpenSemiSynthesis={handleOpenSemiSynthesis}
+            currentPreset={presets.find((p) => p.id === selectedPresetId)}
+            onOpenPresetModal={() => setIsPresetModalOpen(true)}
             layers={layers}
             activeLayerId={activeLayerId}
             onSelectLayer={setActiveLayerId}
@@ -447,6 +498,8 @@ export const App: React.FC = () => {
             onUpdateFilter={handleUpdateFilter}
             expandedSection={expandedSection}
             onToggleSection={handleToggleSection}
+            onUpdateLayerTransform={handleUpdateLayerTransform}
+            onBakeFilter={handleBakeCurrentFilter}
           />
         </div>
 
@@ -492,7 +545,7 @@ export const App: React.FC = () => {
         <SemiSynthesisModal
           isOpen={isSemiSynthesisOpen}
           onClose={() => setIsSemiSynthesisOpen(false)}
-          baseImage={(layers.find((l) => l.id === activeLayerId) || layers[layers.length - 1])?.sourceUrl || ''}
+          baseImage={semiSynthesisBaseImage || (layers.find((l) => l.id === activeLayerId) || layers[layers.length - 1])?.sourceUrl || ''}
           endpoints={endpoints}
           activeEndpointId={activeEndpointId}
           onSelectEndpoint={handleSelectEndpoint}

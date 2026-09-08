@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Wifi, Battery, Sparkles, Smartphone, Monitor } from 'lucide-react';
 
 interface PhoneSimulatorFrameProps {
@@ -37,10 +37,10 @@ export const PhoneSimulatorFrame: React.FC<PhoneSimulatorFrameProps> = ({
     };
   }, []);
 
-  // 如果是在移动设备本身或小屏浏览器，直接沉浸式铺满全屏
+  // 如果是在移动设备本身或小屏浏览器，直接沉浸式铺满全屏，并添加安全区避让手机系统状态栏
   if (isMobileScreen || !isSimulator) {
     return (
-      <div className="w-full h-screen overflow-hidden flex flex-col bg-gradient-to-br from-pink-50 via-rose-50 to-pink-100">
+      <div className="w-full h-screen overflow-hidden flex flex-col bg-gradient-to-br from-pink-50 via-rose-50 to-pink-100 pt-[max(env(safe-area-inset-top,0px),34px)]">
         {children}
       </div>
     );

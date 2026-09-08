@@ -23,6 +23,20 @@ export const DEFAULT_FILTER_SETTINGS: LayerFilterSettings = {
   saturation: 0,
 };
 
+export interface LayerTransform {
+  x: number;      // 相对画布中心的水平偏移像素 (基准分辨率坐标, 默认 0)
+  y: number;      // 相对画布中心的垂直偏移像素 (基准分辨率坐标, 默认 0)
+  scale: number;  // 缩放比例 (默认 1.0)
+  rotation: number; // 旋转角度 (0 ~ 360, 默认 0)
+}
+
+export const DEFAULT_LAYER_TRANSFORM: LayerTransform = {
+  x: 0,
+  y: 0,
+  scale: 1,
+  rotation: 0,
+};
+
 export interface Layer {
   id: string;
   name: string;
@@ -33,6 +47,7 @@ export interface Layer {
   width: number;
   height: number;
   filter: LayerFilterSettings;
+  transform?: LayerTransform;
   createdAt: number;
 }
 

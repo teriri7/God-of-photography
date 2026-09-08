@@ -24,12 +24,15 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /**
- * 渲染单个图层（包含 CSS 滤镜与高级像素调色：白平衡、影调）
+ * 渲染单个图层（包含 CSS 滤镜与高级像素调色：白平衡、影调、自由变换）
  */
 export async function renderLayerToCanvas(
   layer: Layer,
   targetWidth: number,
-  targetHeight: number
+  targetHeight: number,
+  baseWidth: number = targetWidth,
+  baseHeight: number = targetHeight,
+  ignoreTransform: boolean = false
 ): Promise<HTMLCanvasElement> {
   const layerCanvas = document.createElement('canvas');
   layerCanvas.width = targetWidth;
@@ -39,6 +42,7 @@ export async function renderLayerToCanvas(
 
   const img = await loadImage(layer.sourceUrl);
   const filter = layer.filter;
+  const transform = layer.transform || { x: 0, y: 0, scale: 1, rotation: 0 };
 
   // 计算居中等比铺满 / 自适应尺寸
   const hRatio = targetWidth / img.width;
@@ -46,10 +50,30 @@ export async function renderLayerToCanvas(
   const ratio = Math.min(hRatio, vRatio);
   const drawWidth = img.width * ratio;
   const drawHeight = img.height * ratio;
-  const offsetX = (targetWidth - drawWidth) / 2;
-  const offsetY = (targetHeight - drawHeight) / 2;
 
-  ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+  if (ignoreTransform) {
+    const offsetX = (targetWidth - drawWidth) / 2;
+    const offsetY = (targetHeight - drawHeight) / 2;
+    ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+  } else {
+    // 相对基准分辨率的坐标缩放因子
+    const coordScale = baseWidth > 0 ? targetWidth / baseWidth : 1;
+    const tX = (transform.x || 0) * coordScale;
+    const tY = (transform.y || 0) * coordScale;
+    const tScale = transform.scale ?? 1;
+    const tRot = transform.rotation ?? 0;
+
+    ctx.save();
+    const centerX = targetWidth / 2 + tX;
+    const centerY = targetHeight / 2 + tY;
+    ctx.translate(centerX, centerY);
+    if (tRot !== 0) {
+      ctx.rotate((tRot * Math.PI) / 180);
+    }
+    ctx.scale(tScale, tScale);
+    ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    ctx.restore();
+  }
 
   // 如果存在任意 Camera Raw 调色参数，进行全像素级精确调色
   const hasAdjustments =
@@ -68,6 +92,52 @@ export async function renderLayerToCanvas(
   }
 
   return layerCanvas;
+}
+
+/**
+ * 将图层的影调调色永久烘焙（Bake）到底层像素位图中，并重置调色参数为 0
+ */
+export async function bakeLayerFilter(layer: Layer): Promise<Layer> {
+  const filter = layer.filter;
+  const hasAdjustments =
+    filter.exposure !== 0 ||
+    filter.contrast !== 0 ||
+    filter.highlights !== 0 ||
+    filter.shadows !== 0 ||
+    filter.whites !== 0 ||
+    filter.blacks !== 0 ||
+    filter.temperature !== 0 ||
+    filter.tint !== 0 ||
+    filter.saturation !== 0;
+
+  if (!hasAdjustments) return layer;
+
+  // 使用图层自身原始分辨率烘焙像素，保留其独立位移与缩放 transform
+  const bakedCanvas = await renderLayerToCanvas(
+    layer,
+    layer.width,
+    layer.height,
+    layer.width,
+    layer.height,
+    true
+  );
+  const bakedDataUrl = bakedCanvas.toDataURL('image/png');
+
+  return {
+    ...layer,
+    sourceUrl: bakedDataUrl,
+    filter: {
+      exposure: 0,
+      contrast: 0,
+      highlights: 0,
+      shadows: 0,
+      whites: 0,
+      blacks: 0,
+      temperature: 0,
+      tint: 0,
+      saturation: 0,
+    },
+  };
 }
 
 /**
@@ -206,9 +276,11 @@ export async function renderLayersComposite(
 
   // 按照图层顺序（自底向上）绘制所有可见图层
   const visibleLayers = layers.filter((l) => l.visible);
+  const baseWidth = layers[0] ? layers[0].width : width;
+  const baseHeight = layers[0] ? layers[0].height : height;
 
   for (const layer of visibleLayers) {
-    const layerCanvas = await renderLayerToCanvas(layer, width, height);
+    const layerCanvas = await renderLayerToCanvas(layer, width, height, baseWidth, baseHeight);
     
     ctx.save();
     ctx.globalAlpha = layer.opacity / 100;

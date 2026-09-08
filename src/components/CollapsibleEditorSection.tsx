@@ -1,10 +1,18 @@
 import React, { useState } from 'react';
-import { Layer, LayerFilterSettings, DEFAULT_FILTER_SETTINGS } from '../types';
+import {
+  Layer,
+  LayerFilterSettings,
+  DEFAULT_FILTER_SETTINGS,
+  LayerTransform,
+  DEFAULT_LAYER_TRANSFORM,
+  PromptPreset,
+} from '../types';
 import {
   Layers,
   Sliders,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Eye,
   EyeOff,
   ArrowUp,
@@ -13,9 +21,16 @@ import {
   Copy,
   RotateCcw,
   Sparkles,
+  Wand2,
 } from 'lucide-react';
 
 interface CollapsibleEditorSectionProps {
+  // 1. 半合成
+  onOpenSemiSynthesis?: () => void;
+  // 2. 风格预设
+  currentPreset?: PromptPreset;
+  onOpenPresetModal?: () => void;
+  // 3. 图层
   layers: Layer[];
   activeLayerId: string | null;
   onSelectLayer: (id: string) => void;
@@ -28,9 +43,14 @@ interface CollapsibleEditorSectionProps {
   onUpdateFilter: (layerId: string, filter: LayerFilterSettings) => void;
   expandedSection: 'none' | 'layers' | 'tonal';
   onToggleSection: (section: 'layers' | 'tonal') => void;
+  onUpdateLayerTransform?: (layerId: string, transform: LayerTransform) => void;
+  onBakeFilter?: () => void;
 }
 
 export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> = ({
+  onOpenSemiSynthesis,
+  currentPreset,
+  onOpenPresetModal,
   layers,
   activeLayerId,
   onSelectLayer,
@@ -43,6 +63,8 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
   onUpdateFilter,
   expandedSection,
   onToggleSection,
+  onUpdateLayerTransform,
+  onBakeFilter,
 }) => {
   const isLayersOpen = expandedSection === 'layers';
   const isTonalOpen = expandedSection === 'tonal';
@@ -66,8 +88,80 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
   const displayLayers = [...layers].reverse();
 
   return (
-    <div className="w-full px-3 py-1.5 space-y-2">
-      {/* 1. 折叠栏：图层调整 */}
+    <div
+      className={`w-full px-3 py-1 space-y-2 overflow-y-auto overscroll-contain transition-all duration-300 no-scrollbar touch-pan-y ${
+        expandedSection !== 'none' ? 'max-h-[420px]' : 'max-h-[280px] sm:max-h-[340px]'
+      }`}
+    >
+      {/* 1. 功能菜单栏：半合成 (核心除杂与角色布景落地) */}
+      {onOpenSemiSynthesis && (
+        <div className="glass-panel rounded-2xl overflow-hidden border border-pink-300/60 shadow-xs transition-all duration-300 hover:border-pink-400">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={onOpenSemiSynthesis}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpenSemiSynthesis(); }}
+            className="w-full px-3.5 py-2.5 flex items-center justify-between bg-gradient-to-r from-pink-500/90 via-rose-500/90 to-fuchsia-500/90 hover:from-pink-600 hover:to-fuchsia-600 active:scale-[0.99] text-white transition-all cursor-pointer select-none"
+          >
+            <div className="flex items-center space-x-2.5 min-w-0 flex-1 mr-2">
+              <div className="w-6 h-6 rounded-lg bg-white/20 backdrop-blur-xs flex items-center justify-center text-white shrink-0">
+                <Wand2 className="w-3.5 h-3.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center space-x-1.5 flex-wrap">
+                  <span className="text-xs font-black tracking-wide text-white">半合成</span>
+                  <span className="text-[9px] px-1.5 py-0.2 bg-white/25 rounded-full font-semibold shrink-0 text-white">
+                    除杂 · 角色布景
+                  </span>
+                </div>
+                <span className="text-[10px] text-pink-100 font-normal block truncate mt-0.5">
+                  智能除杂穿帮 → 识别角色特征 → 真实道具落地
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center space-x-1 text-white/90 shrink-0 font-bold text-[10px]">
+              <span>开始</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. 功能菜单栏：风格预设 */}
+      {onOpenPresetModal && (
+        <div className="glass-panel rounded-2xl overflow-hidden border border-pink-200/60 shadow-xs transition-all duration-300 hover:border-pink-300">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={onOpenPresetModal}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpenPresetModal(); }}
+            className="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-white/50 active:bg-white/70 transition-colors cursor-pointer select-none"
+          >
+            <div className="flex items-center space-x-2.5 min-w-0 flex-1 mr-2">
+              <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-pink-400 to-rose-400 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Sparkles className="w-3.5 h-3.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center space-x-1.5 flex-wrap">
+                  <span className="text-xs font-bold text-slate-800">风格预设</span>
+                  <span className="text-[10px] px-2 py-0.2 bg-pink-100 text-pink-700 font-bold rounded-full truncate max-w-[140px]">
+                    {currentPreset?.title || '场照除杂'}
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-400 block truncate mt-0.5">
+                  点击切换风格预设或自定义修图提示词
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center space-x-1 text-pink-500 shrink-0 font-semibold text-[10px]">
+              <span>切换</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. 折叠栏：图层调整 */}
       <div className="glass-panel rounded-2xl overflow-hidden border border-pink-200/50 shadow-xs transition-all duration-300">
         <div
           role="button"
@@ -204,6 +298,41 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                         className="w-full pink-slider"
                       />
                     </div>
+
+                    {/* 图层缩放与居中复位 (活跃图层) */}
+                    {isActive && onUpdateLayerTransform && (
+                      <div className="flex items-center space-x-2 pt-1.5 mt-1 border-t border-pink-100/40">
+                        <span className="text-[9px] text-slate-500 font-medium shrink-0">
+                          缩放: <strong className="font-mono text-pink-600">{Math.round((layer.transform?.scale ?? 1) * 100)}%</strong>
+                        </span>
+                        <input
+                          type="range"
+                          min="10"
+                          max="300"
+                          value={Math.round((layer.transform?.scale ?? 1) * 100)}
+                          onChange={(e) => {
+                            const scaleVal = Math.max(0.1, Math.min(5, Number(e.target.value) / 100));
+                            onUpdateLayerTransform(layer.id, {
+                              ...(layer.transform || DEFAULT_LAYER_TRANSFORM),
+                              scale: scaleVal,
+                            });
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full pink-slider"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onUpdateLayerTransform(layer.id, { ...DEFAULT_LAYER_TRANSFORM });
+                          }}
+                          title="居中并重置缩放"
+                          className="px-2 py-0.5 text-[9px] rounded bg-pink-100/80 text-pink-700 hover:bg-pink-200 shrink-0 font-medium border border-pink-200/60"
+                        >
+                          居中复位
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -235,17 +364,31 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
 
           <div className="flex items-center space-x-1.5">
             {activeLayer && isTonalOpen && (
-              <button
-                onClick={handleResetFilters}
-                title="重置当前图层影调"
-                className="px-2 py-0.5 rounded-full bg-pink-100/80 hover:bg-pink-200 text-pink-700 text-[10px] font-semibold flex items-center space-x-0.5"
-              >
-                <RotateCcw className="w-2.5 h-2.5" />
-                <span>重置</span>
-              </button>
+              <div className="flex items-center space-x-1" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={handleResetFilters}
+                  title="重置当前图层影调"
+                  className="px-2 py-0.5 rounded-full bg-pink-100/80 hover:bg-pink-200 text-pink-700 text-[10px] font-semibold flex items-center space-x-0.5"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>重置</span>
+                </button>
+                {onBakeFilter && (
+                  <button
+                    onClick={() => {
+                      onBakeFilter();
+                      onToggleSection('tonal');
+                    }}
+                    title="应用调整到图层并收起"
+                    className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 text-white text-[10px] font-bold shadow-xs flex items-center space-x-0.5"
+                  >
+                    <span>✓ 应用收起</span>
+                  </button>
+                )}
+              </div>
             )}
             <span className="text-[10px] text-pink-400">
-              {isTonalOpen ? '点击收起' : '展开实时调色'}
+              {isTonalOpen ? '' : '展开实时调色'}
             </span>
             {isTonalOpen ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
           </div>
@@ -419,6 +562,23 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                     className="w-full pink-slider"
                   />
                 </div>
+
+                {/* 确认应用并收起按钮 */}
+                {onBakeFilter && (
+                  <div className="pt-2 border-t border-pink-100/60">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onBakeFilter();
+                        onToggleSection('tonal');
+                      }}
+                      className="w-full py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 active:scale-[0.98] text-white text-xs font-bold shadow-sm shadow-pink-300/50 flex items-center justify-center space-x-1 transition-all"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>✓ 确认应用调色并收起 (固化至图层)</span>
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
