@@ -258,7 +258,8 @@ export async function renderLayersComposite(
   layers: Layer[],
   targetCanvas: HTMLCanvasElement,
   outputWidth?: number,
-  outputHeight?: number
+  outputHeight?: number,
+  backgroundColor?: string
 ): Promise<void> {
   const width = outputWidth || targetCanvas.width;
   const height = outputHeight || targetCanvas.height;
@@ -273,6 +274,12 @@ export async function renderLayersComposite(
 
   // 清除画布
   ctx.clearRect(0, 0, width, height);
+
+  // 如果指定了底色（例如导出 JPEG 时铺设纯白底色以防止透明区域变黑）
+  if (backgroundColor) {
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(0, 0, width, height);
+  }
 
   // 按照图层顺序（自底向上）绘制所有可见图层
   const visibleLayers = layers.filter((l) => l.visible);
@@ -291,11 +298,73 @@ export async function renderLayersComposite(
 }
 
 /**
+ * 极速将 DataURL 转为 Blob 对象，避免昂贵的 Canvas 二次图像压缩编码
+ */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const parts = dataUrl.split(',');
+  const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+  const bstr = atob(parts[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new Blob([u8arr], { type: mime });
+}
+
+/**
+ * 将任意图片（PNG / WebP / 大图）快速转换为指定质量（默认 0.95）的高清 JPEG DataURL
+ * 大幅削减超大 PNG 内存开销、加速网络传输并提升半合成与预设生图响应速度
+ */
+export async function convertToJpeg(imageSrc: string, quality = 0.95): Promise<string> {
+  if (!imageSrc) return imageSrc;
+
+  // 如果已经是普通大小的 JPEG DataURL 则直接返回
+  if (imageSrc.startsWith('data:image/jpeg;base64,') && imageSrc.length < 2 * 1024 * 1024) {
+    return imageSrc;
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(imageSrc);
+          return;
+        }
+
+        // 铺设白底，防止 PNG 透明区域转为黑色
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+
+        const jpegDataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(jpegDataUrl);
+      } catch (e) {
+        console.warn('转换为 0.95 质量 JPEG 失败，使用原图:', e);
+        resolve(imageSrc);
+      }
+    };
+    img.onerror = () => {
+      console.warn('加载待转图片失败，保留原图');
+      resolve(imageSrc);
+    };
+    img.src = imageSrc;
+  });
+}
+
+/**
  * 导出全分辨率合成图片 (DataURL / Blob)
+ * 默认使用 0.95 质量的 JPEG 格式，极大提升处理速度与网络上传性能
  */
 export async function exportCompositeImage(
   layers: Layer[],
-  format: 'image/png' | 'image/jpeg' = 'image/png',
+  format: 'image/png' | 'image/jpeg' = 'image/jpeg',
   quality = 0.95
 ): Promise<{ dataUrl: string; blob: Blob }> {
   // 获取参考图层最大分辨率
@@ -311,16 +380,25 @@ export async function exportCompositeImage(
   exportCanvas.width = maxWidth;
   exportCanvas.height = maxHeight;
 
-  await renderLayersComposite(layers, exportCanvas, maxWidth, maxHeight);
+  // JPEG 没有透明通道，预铺白底防止透明背景转黑
+  const bgColor = format === 'image/jpeg' ? '#ffffff' : undefined;
+  await renderLayersComposite(layers, exportCanvas, maxWidth, maxHeight, bgColor);
 
   const dataUrl = exportCanvas.toDataURL(format, quality);
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    exportCanvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error('Canvas 导出 Blob 失败'))),
-      format,
-      quality
-    );
-  });
+
+  // 极速内存转换，无需重新走 toBlob 画布压缩
+  let blob: Blob;
+  try {
+    blob = dataUrlToBlob(dataUrl);
+  } catch {
+    blob = await new Promise<Blob>((resolve, reject) => {
+      exportCanvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('Canvas 导出 Blob 失败'))),
+        format,
+        quality
+      );
+    });
+  }
 
   return { dataUrl, blob };
 }

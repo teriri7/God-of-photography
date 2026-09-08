@@ -10,7 +10,7 @@ import {
 } from './types';
 import { storageService } from './services/storageService';
 import { apiService } from './services/apiService';
-import { exportCompositeImage, loadImage, bakeLayerFilter } from './utils/canvasRenderer';
+import { exportCompositeImage, loadImage, bakeLayerFilter, convertToJpeg } from './utils/canvasRenderer';
 import { detectClosestAspectRatio, calculateDimensions, ResolutionMode } from './utils/ratioHelper';
 
 import { Header } from './components/Header';
@@ -224,15 +224,15 @@ export const App: React.FC = () => {
     // 自动烘焙固化当前未收起的影调参数
     const currentLayers = (await handleBakeCurrentFilter()) || layers;
 
-    // 关键：导出所有可见图层、贴纸移动/缩放与调色后的完整合成图，保证所见即所得生图
+    // 关键：导出所有可见图层、贴纸移动/缩放与调色后的完整合成图，采用 0.95 质量 JPG 极大提升处理与上传速度
     let baseInputUrl = '';
     try {
-      const { dataUrl } = await exportCompositeImage(currentLayers, 'image/png');
+      const { dataUrl } = await exportCompositeImage(currentLayers, 'image/jpeg', 0.95);
       baseInputUrl = dataUrl;
     } catch (e) {
       console.error('导出画布合成图失败，使用顶层图层回退:', e);
       const targetLayer = currentLayers.find((l) => l.id === activeLayerId) || currentLayers[currentLayers.length - 1];
-      baseInputUrl = targetLayer.sourceUrl;
+      baseInputUrl = targetLayer?.sourceUrl ? await convertToJpeg(targetLayer.sourceUrl, 0.95) : '';
     }
 
     const currentPreset = presets.find((p) => p.id === selectedPresetId);
@@ -318,12 +318,18 @@ export const App: React.FC = () => {
     }
     const currentLayers = (await handleBakeCurrentFilter()) || layers;
     try {
-      const { dataUrl } = await exportCompositeImage(currentLayers, 'image/png');
+      // 关键优化：采用 0.95 质量的高清 JPG 格式导出，彻底消除 30MB PNG 导致的卡顿与内存压力
+      const { dataUrl } = await exportCompositeImage(currentLayers, 'image/jpeg', 0.95);
       setSemiSynthesisBaseImage(dataUrl);
     } catch (err) {
       console.error('合成半合成基准图失败:', err);
       const targetLayer = currentLayers.find((l) => l.id === activeLayerId) || currentLayers[currentLayers.length - 1];
-      setSemiSynthesisBaseImage(targetLayer?.sourceUrl || '');
+      if (targetLayer?.sourceUrl) {
+        const fallbackJpeg = await convertToJpeg(targetLayer.sourceUrl, 0.95);
+        setSemiSynthesisBaseImage(fallbackJpeg);
+      } else {
+        setSemiSynthesisBaseImage('');
+      }
     }
     setIsSemiSynthesisOpen(true);
   };

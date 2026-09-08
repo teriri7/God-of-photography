@@ -1,3 +1,5 @@
+import { convertToJpeg } from '../utils/canvasRenderer';
+
 export interface ImageGenParams {
   baseUrl: string;
   apiKey: string;
@@ -52,6 +54,16 @@ export const apiService = {
     const cleanUrl = baseUrl.trim().replace(/\/+$/, '');
     const cleanKey = apiKey.trim();
 
+    // 关键优化：确保发送给 API 的图片为 0.95 质量的高清 JPG，极大压缩请求体体积并提升上传速度
+    let optimizedInputImage = inputImageBase64;
+    try {
+      if (inputImageBase64 && (!inputImageBase64.startsWith('data:image/jpeg') || inputImageBase64.length > 2 * 1024 * 1024)) {
+        optimizedInputImage = await convertToJpeg(inputImageBase64, 0.95);
+      }
+    } catch (e) {
+      console.warn('转换为 0.95 质量 JPEG 失败，使用原始图片:', e);
+    }
+
     const fullPrompt = `${prompt} [Parameters: Aspect Ratio ${aspectRatio}, Target Resolution ${resolution}]. Output high quality, crisp details, strictly adhering to the specified ${aspectRatio} aspect ratio and ${resolution} resolution. Please output the generated image directly.`;
 
     // 优先尝试多模态 Chat Completions（NewAPI 的 gemini-*-image / gpt-image-2 普遍规范）
@@ -70,7 +82,7 @@ export const apiService = {
               {
                 type: 'image_url',
                 image_url: {
-                  url: inputImageBase64,
+                  url: optimizedInputImage,
                 },
               },
             ],
@@ -207,6 +219,16 @@ export const apiService = {
     const cleanUrl = baseUrl.trim().replace(/\/+$/, '');
     const cleanKey = apiKey.trim();
 
+    // 关键优化：确保发送给视觉识别大模型的图片为 0.95 质量的高清 JPG，极大减少网络延时
+    let optimizedInputImage = inputImageBase64;
+    try {
+      if (inputImageBase64 && (!inputImageBase64.startsWith('data:image/jpeg') || inputImageBase64.length > 2 * 1024 * 1024)) {
+        optimizedInputImage = await convertToJpeg(inputImageBase64, 0.95);
+      }
+    } catch (e) {
+      console.warn('转换为 0.95 质量 JPEG 失败，使用原始图片:', e);
+    }
+
     const chatEndpoint = `${cleanUrl}/v1/chat/completions`;
     const chatBody = {
       model,
@@ -221,7 +243,7 @@ export const apiService = {
             {
               type: 'image_url',
               image_url: {
-                url: inputImageBase64,
+                url: optimizedInputImage,
               },
             },
           ],
