@@ -181,7 +181,7 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in duration-200 pt-[max(env(safe-area-inset-top,0px),24px)] pb-[max(env(safe-area-inset-bottom,0px),12px)]">
       <div className="w-full max-w-sm glass-panel p-4 rounded-3xl shadow-2xl space-y-3.5 border border-pink-200/80 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between pb-2 border-b border-pink-200/60 shrink-0">

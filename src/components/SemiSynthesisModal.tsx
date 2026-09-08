@@ -319,31 +319,32 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex flex-col justify-between overflow-hidden animate-in fade-in duration-200 select-none">
-      {/* 顶部导航条 */}
-      <div className="w-full px-4 py-2.5 glass-panel border-b border-pink-200/50 flex items-center justify-between shrink-0">
-        <div className="flex items-center space-x-2">
-          <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-pink-500 to-rose-400 flex items-center justify-center text-white shadow-xs">
-            <Wand2 className="w-4 h-4" />
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex flex-col justify-between overflow-hidden animate-in fade-in duration-200 select-none pt-[max(env(safe-area-inset-top,0px),34px)] pb-[max(env(safe-area-inset-bottom,0px),12px)]">
+      {/* 顶部紧凑导航条（避让状态栏，精简高度） */}
+      <div className="w-full px-3 py-1.5 glass-panel border-b border-pink-200/60 flex items-center justify-between shrink-0 shadow-xs">
+        <div className="flex items-center space-x-2 min-w-0">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-pink-500 to-rose-400 flex items-center justify-center text-white shadow-xs shrink-0">
+            <Wand2 className="w-3.5 h-3.5" />
           </div>
-          <div>
-            <h3 className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-              <span>半合成流水线</span>
-              <span className="text-[10px] px-1.5 py-0.2 bg-pink-100 text-pink-700 rounded-full font-mono font-bold">
-                步骤 {step} / 3
+          <div className="min-w-0">
+            <div className="flex items-center space-x-1.5">
+              <span className="text-xs font-bold text-slate-800 shrink-0">半合成流水线</span>
+              <span className="text-[9px] px-1.5 py-0.2 bg-pink-100 text-pink-700 rounded-full font-mono font-bold shrink-0">
+                步骤 {step}/3
               </span>
-            </h3>
-            <p className="text-[9px] text-pink-500">
-              {step === 1 && '第一步：场照除杂（路人/灯架/反光板清理）'}
-              {step === 2 && '第二步：角色特征识别与写实布景道具顾问'}
-              {step === 3 && '第三步：真实漫展落地布景成图'}
-            </p>
+              <span className="text-[9px] text-pink-600 font-medium truncate max-w-[150px]">
+                {step === 1 && '场照除杂'}
+                {step === 2 && '特征识别与道具'}
+                {step === 3 && '落地布景成图'}
+              </span>
+            </div>
           </div>
         </div>
 
         <button
           onClick={onClose}
-          className="w-7 h-7 rounded-full bg-white/70 hover:bg-white text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors"
+          title="关闭"
+          className="w-7 h-7 rounded-full bg-white/80 hover:bg-white text-slate-600 hover:text-slate-900 flex items-center justify-center transition-colors shadow-xs shrink-0 ml-2"
         >
           <X className="w-4 h-4" />
         </button>

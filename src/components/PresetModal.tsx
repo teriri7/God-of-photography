@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { PromptPreset } from '../types';
 import { Sparkles, Camera, Zap, Palette, Wand2, Plus, Edit3, Trash2, Check, X } from 'lucide-react';
 
@@ -88,7 +88,7 @@ export const PresetModal: React.FC<PresetModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200 pt-[max(env(safe-area-inset-top,0px),24px)] pb-[max(env(safe-area-inset-bottom,0px),12px)]">
       <div className="w-full max-w-md glass-panel rounded-t-3xl sm:rounded-3xl shadow-2xl p-4 sm:p-5 border border-pink-200/80 animate-in slide-in-from-bottom-6 duration-200 flex flex-col max-h-[88vh]">
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between pb-2.5 border-b border-pink-200/60 shrink-0">
