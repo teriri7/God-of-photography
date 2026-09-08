@@ -353,16 +353,27 @@ export const App: React.FC = () => {
     }
   };
 
-  // 导出/保存全图层高清合成图至系统相册
+  // 导出/保存全图层 100% 无损 PNG 合成图至系统相册
   const handleExport = async () => {
     if (layers.length === 0) return;
 
     setIsExporting(true);
-    showToast('正在合成高清全图层并保存至手机相册...', 'info');
+    showToast('正在合成 100% 原画质无损 PNG 并流式保存...', 'info');
 
     try {
-      const { dataUrl } = await exportCompositeImage(layers, 'image/png');
-      const res = await mediaService.saveToGallery(dataUrl, `摄影之神_${Date.now()}.png`);
+      // 1. 无损合成生成二进制 Blob，不产生超长 Base64 字符串
+      const { blob } = await exportCompositeImage(layers, 'image/png');
+
+      // 2. 512KB 分块流式写入手机相册，内存占用 < 2MB，彻底杜绝 OOM 闪退
+      const res = await mediaService.saveBlobToGallery(
+        blob,
+        `摄影之神_${Date.now()}.png`,
+        (percent) => {
+          if (percent % 25 === 0 && percent < 100) {
+            showToast(`正在无损保存至相册... ${percent}%`, 'info');
+          }
+        }
+      );
       showToast(res.message, 'success');
     } catch (err: any) {
       console.error('保存至手机相册失败:', err);

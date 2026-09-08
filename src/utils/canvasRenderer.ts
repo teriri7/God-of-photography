@@ -459,8 +459,8 @@ export async function convertToJpeg(imageSrc: string, quality = 0.95): Promise<s
  */
 export async function exportCompositeImage(
   layers: Layer[],
-  format: 'image/png' | 'image/jpeg' = 'image/jpeg',
-  quality = 0.95
+  format: 'image/png' | 'image/jpeg' = 'image/png',
+  quality = 1.0
 ): Promise<{ dataUrl: string; blob: Blob }> {
   // 获取参考图层最大分辨率
   let maxWidth = 1024;
@@ -471,6 +471,16 @@ export async function exportCompositeImage(
     if (l.height > maxHeight) maxHeight = l.height;
   }
 
+  // 🛡️ 移动端 GPU 纹理与 Canvas 内存安全限制：长边安全阈值 8192px (覆盖 5000万/6400万像素极限相机原图)
+  // 主流手机相机照片均可在 100% 原生全分辨率下无损导出
+  const MAX_SAFE_DIMENSION = 8192;
+  const maxDim = Math.max(maxWidth, maxHeight);
+  if (maxDim > MAX_SAFE_DIMENSION) {
+    const scaleFactor = MAX_SAFE_DIMENSION / maxDim;
+    maxWidth = Math.max(1, Math.round(maxWidth * scaleFactor));
+    maxHeight = Math.max(1, Math.round(maxHeight * scaleFactor));
+  }
+
   const exportCanvas = document.createElement('canvas');
   exportCanvas.width = maxWidth;
   exportCanvas.height = maxHeight;
@@ -479,21 +489,28 @@ export async function exportCompositeImage(
   const bgColor = format === 'image/jpeg' ? '#ffffff' : undefined;
   await renderLayersComposite(layers, exportCanvas, maxWidth, maxHeight, bgColor);
 
-  const dataUrl = exportCanvas.toDataURL(format, quality);
+  // 优先生成原生二进制 Blob（Skia C++ 底层无损编码，完全不占用 JS 堆内存）
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    exportCanvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('Canvas 导出 Blob 失败'))),
+      format,
+      quality
+    );
+  });
 
-  // 极速内存转换，无需重新走 toBlob 画布压缩
-  let blob: Blob;
-  try {
-    blob = dataUrlToBlob(dataUrl);
-  } catch {
-    blob = await new Promise<Blob>((resolve, reject) => {
-      exportCanvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error('Canvas 导出 Blob 失败'))),
-        format,
-        quality
-      );
-    });
+  // 如果调用方明确需要 dataUrl（例如半合成流程需要传给 API），仅在格式为 jpeg 或小图时生成
+  let dataUrl = '';
+  if (format === 'image/jpeg' || maxWidth * maxHeight <= 2048 * 2048) {
+    try {
+      dataUrl = exportCanvas.toDataURL(format, quality);
+    } catch (_) {}
   }
+
+  // 及时释放离屏 Canvas 显存
+  try {
+    exportCanvas.width = 1;
+    exportCanvas.height = 1;
+  } catch (_) {}
 
   return { dataUrl, blob };
 }

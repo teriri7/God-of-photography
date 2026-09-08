@@ -900,7 +900,7 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                   onClick={async () => {
                     try {
                       onToast('正在保存大片至手机相册...', 'info');
-                      const res = await mediaService.saveToGallery(finalImage, `半合成_${character || '布景'}_${Date.now()}.png`);
+                      const res = await mediaService.saveToGallery(finalImage, `半合成_${character || '布景'}_${Date.now()}.jpg`);
                       onToast(res.message, 'success');
                     } catch (e: any) {
                       onToast(e?.message || '保存失败', 'error');
