@@ -8,7 +8,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
-import android.util.Base64;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -21,294 +20,213 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
 
 @CapacitorPlugin(name = "SaveImage")
 public class SaveImagePlugin extends Plugin {
 
-    private File currentTempFile = null;
-    private FileOutputStream currentFos = null;
-    private final Object streamLock = new Object();
-
     /**
-     * 启动无损大图流式保存会话
-     * 在 App 私有缓存目录中创建临时输出流，分段接收数据，从源头上解决超大 Base64 撑爆 JS-Native 通信桥梁的 OOM 闪退
+     * 核心保存方法：从原生文件路径直接流式拷贝到系统相册
+     * Bridge 只传递一个短字符串（文件路径），绝对不传大数据，从根源上消灭 OOM！
+     *
+     * 调用方式：
+     * JS 侧先把图片数据分 64KB 小块写入 Capacitor Filesystem（Documents 或 Cache），
+     * 用 Filesystem.getUri() 获取原生 file:// URI，
+     * 然后把这个短 URI 传给本方法，由 Java 负责把文件注入系统媒体库。
      */
     @PluginMethod
-    public void startSaveSession(PluginCall call) {
-        synchronized (streamLock) {
-            try {
-                cleanupCurrentSession();
+    public void saveFromNativePath(PluginCall call) {
+        String nativePath = call.getString("nativePath");
+        String fileName   = call.getString("fileName");
 
-                File cacheDir = getContext().getCacheDir();
-                File exportDir = new File(cacheDir, "exports");
-                if (!exportDir.exists()) {
-                    exportDir.mkdirs();
-                }
-
-                currentTempFile = new File(exportDir, "export_" + System.currentTimeMillis() + ".tmp");
-                currentFos = new FileOutputStream(currentTempFile);
-
-                JSObject ret = new JSObject();
-                ret.put("success", true);
-                call.resolve(ret);
-            } catch (Throwable t) {
-                t.printStackTrace();
-                cleanupCurrentSession();
-                call.reject("启动无损流式保存会话失败: " + t.getMessage());
-            }
-        }
-    }
-
-    /**
-     * 写入一个 256KB ~ 512KB 的小分块数据
-     * 单次传输仅需极小内存（<1MB），绝不会触发 StringBuilder 75MB 连续内存申请导致的 OOM
-     */
-    @PluginMethod
-    public void writeChunk(PluginCall call) {
-        String chunk = call.getString("chunk");
-        if (chunk == null || chunk.isEmpty()) {
-            call.resolve();
+        if (nativePath == null || nativePath.isEmpty()) {
+            call.reject("nativePath 不能为空");
             return;
         }
-
-        synchronized (streamLock) {
-            try {
-                if (currentFos == null) {
-                    call.reject("保存会话未初始化或已关闭");
-                    return;
-                }
-
-                byte[] chunkBytes = Base64.decode(chunk, Base64.DEFAULT);
-                currentFos.write(chunkBytes);
-
-                JSObject ret = new JSObject();
-                ret.put("success", true);
-                call.resolve(ret);
-            } catch (Throwable t) {
-                t.printStackTrace();
-                call.reject("写入图像分块失败: " + t.getMessage());
-            }
-        }
-    }
-
-    /**
-     * 完成分块流式写入，并将完整的无损 PNG/JPEG 图像安全注入系统相册
-     */
-    @PluginMethod
-    public void finishSaveSession(PluginCall call) {
-        String fileName = call.getString("fileName");
         if (fileName == null || fileName.isEmpty()) {
             fileName = "摄影之神_" + System.currentTimeMillis() + ".png";
         }
 
-        synchronized (streamLock) {
-            try {
-                if (currentFos != null) {
-                    currentFos.flush();
-                    currentFos.close();
-                    currentFos = null;
+        try {
+            // 将 content:// 或 file:// URI 解析为实际文件对象
+            File srcFile;
+            if (nativePath.startsWith("file://")) {
+                srcFile = new File(URI.create(nativePath));
+            } else if (nativePath.startsWith("content://")) {
+                // content:// 形式，直接用 ContentResolver 读取
+                srcFile = null;
+            } else {
+                srcFile = new File(nativePath);
+            }
+
+            Context context = getContext();
+            ContentResolver resolver = context.getContentResolver();
+
+            String lower = fileName.toLowerCase();
+            String mimeType = (lower.endsWith(".jpg") || lower.endsWith(".jpeg"))
+                ? "image/jpeg" : "image/png";
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues cv = new ContentValues();
+                cv.put(MediaStore.Images.Media.DISPLAY_NAME, fileName);
+                cv.put(MediaStore.Images.Media.MIME_TYPE, mimeType);
+                cv.put(MediaStore.Images.Media.IS_PENDING, 1);
+
+                // 尝试写入「摄影之神」子目录，失败则降级到 Pictures 根目录
+                Uri uri = null;
+                String[] relativePaths = {
+                    Environment.DIRECTORY_PICTURES + File.separator + "摄影之神",
+                    Environment.DIRECTORY_PICTURES
+                };
+                for (String rp : relativePaths) {
+                    try {
+                        cv.put(MediaStore.Images.Media.RELATIVE_PATH, rp);
+                        uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
+                        if (uri != null) break;
+                    } catch (Throwable ignored) {}
                 }
 
-                if (currentTempFile == null || !currentTempFile.exists() || currentTempFile.length() == 0) {
-                    cleanupCurrentSession();
-                    call.reject("临时图像文件不存在或为空");
+                if (uri == null) {
+                    call.reject("系统相册创建记录失败，返回空 URI");
                     return;
                 }
 
-                Context context = getContext();
-                ContentResolver resolver = context.getContentResolver();
-
-                String lower = fileName.toLowerCase();
-                String mimeType = (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) ? "image/jpeg" : "image/png";
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    // Android 10+ (包含鸿蒙4.2)：通过 MediaStore 写入相册
-                    ContentValues contentValues = new ContentValues();
-                    contentValues.put(MediaStore.Images.Media.DISPLAY_NAME, fileName);
-                    contentValues.put(MediaStore.Images.Media.MIME_TYPE, mimeType);
-                    contentValues.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + File.separator + "摄影之神");
-                    contentValues.put(MediaStore.Images.Media.IS_PENDING, 1);
-
-                    Uri uri = null;
-                    try {
-                        uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues);
-                    } catch (Throwable insertErr) {
-                        contentValues.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES);
-                        uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues);
-                    }
-
-                    if (uri == null) {
-                        cleanupCurrentSession();
-                        call.reject("系统相册创建记录失败，返回空 URI");
+                // 用 64KB 缓冲流式拷贝，全程内存占用 < 100KB
+                try (InputStream in  = openInputStream(nativePath, srcFile, resolver);
+                     OutputStream out = resolver.openOutputStream(uri)) {
+                    if (in == null || out == null) {
+                        resolver.delete(uri, null, null);
+                        call.reject("无法打开源文件或目标输出流");
                         return;
                     }
-
-                    // 采用 64KB 缓冲流式拷入系统相册，全程内存占用不超过 64KB！
-                    try (InputStream in = new FileInputStream(currentTempFile);
-                         OutputStream out = resolver.openOutputStream(uri)) {
-                        if (out == null) {
-                            cleanupCurrentSession();
-                            call.reject("无法打开相册输出流");
-                            return;
-                        }
-
-                        byte[] buffer = new byte[65536];
-                        int bytesRead;
-                        while ((bytesRead = in.read(buffer)) != -1) {
-                            out.write(buffer, 0, bytesRead);
-                        }
-                        out.flush();
+                    byte[] buf = new byte[65536]; // 64KB 缓冲
+                    int n;
+                    while ((n = in.read(buf)) != -1) {
+                        out.write(buf, 0, n);
                     }
-
-                    contentValues.clear();
-                    contentValues.put(MediaStore.Images.Media.IS_PENDING, 0);
-                    try {
-                        resolver.update(uri, contentValues, null, null);
-                    } catch (Throwable updateErr) {
-                        updateErr.printStackTrace();
-                    }
-
-                    cleanupCurrentSession();
-
-                    JSObject ret = new JSObject();
-                    ret.put("success", true);
-                    ret.put("uri", uri.toString());
-                    ret.put("path", "Pictures/摄影之神/" + fileName);
-                    call.resolve(ret);
-                } else {
-                    // Android 9 及以下兼容写入
-                    File picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
-                    File appDir = new File(picturesDir, "摄影之神");
-                    if (!appDir.exists()) {
-                        appDir.mkdirs();
-                    }
-                    File destFile = new File(appDir, fileName);
-
-                    try (InputStream in = new FileInputStream(currentTempFile);
-                         OutputStream out = new FileOutputStream(destFile)) {
-                        byte[] buffer = new byte[65536];
-                        int bytesRead;
-                        while ((bytesRead = in.read(buffer)) != -1) {
-                            out.write(buffer, 0, bytesRead);
-                        }
-                        out.flush();
-                    }
-
-                    cleanupCurrentSession();
-
-                    MediaScannerConnection.scanFile(
-                        context,
-                        new String[]{destFile.getAbsolutePath()},
-                        new String[]{mimeType},
-                        (scannedPath, scannedUri) -> {
-                            JSObject ret = new JSObject();
-                            ret.put("success", true);
-                            ret.put("path", scannedPath != null ? scannedPath : destFile.getAbsolutePath());
-                            call.resolve(ret);
-                        }
-                    );
+                    out.flush();
                 }
-            } catch (Throwable t) {
-                t.printStackTrace();
-                cleanupCurrentSession();
-                call.reject("保存到手机相册失败: " + (t.getMessage() != null ? t.getMessage() : "存储写入异常"));
+
+                cv.clear();
+                cv.put(MediaStore.Images.Media.IS_PENDING, 0);
+                try { resolver.update(uri, cv, null, null); } catch (Throwable ignored) {}
+
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                ret.put("uri", uri.toString());
+                ret.put("path", "Pictures/摄影之神/" + fileName);
+                call.resolve(ret);
+
+            } else {
+                // Android 9 及以下：写入公共 Pictures 目录
+                File destDir = new File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                    "摄影之神"
+                );
+                if (!destDir.exists()) destDir.mkdirs();
+                File destFile = new File(destDir, fileName);
+
+                try (InputStream in  = openInputStream(nativePath, srcFile, resolver);
+                     OutputStream out = new FileOutputStream(destFile)) {
+                    if (in == null) {
+                        call.reject("无法打开源文件");
+                        return;
+                    }
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+                    out.flush();
+                }
+
+                MediaScannerConnection.scanFile(
+                    context,
+                    new String[]{destFile.getAbsolutePath()},
+                    new String[]{mimeType},
+                    (path, scanUri) -> {
+                        JSObject ret = new JSObject();
+                        ret.put("success", true);
+                        ret.put("path", path != null ? path : destFile.getAbsolutePath());
+                        call.resolve(ret);
+                    }
+                );
             }
+        } catch (Throwable t) {
+            t.printStackTrace();
+            call.reject("保存到手机相册失败: " + (t.getMessage() != null ? t.getMessage() : "存储写入异常"));
         }
     }
 
-    /**
-     * 取消会话并清理临时文件
-     */
-    @PluginMethod
-    public void cancelSaveSession(PluginCall call) {
-        synchronized (streamLock) {
-            cleanupCurrentSession();
-            JSObject ret = new JSObject();
-            ret.put("success", true);
-            call.resolve(ret);
-        }
-    }
-
-    private void cleanupCurrentSession() {
+    // 兼容 file://, content:// 及普通路径的通用输入流打开
+    private InputStream openInputStream(String nativePath, File srcFile, ContentResolver resolver) {
         try {
-            if (currentFos != null) {
-                currentFos.close();
+            if (nativePath.startsWith("content://")) {
+                return resolver.openInputStream(Uri.parse(nativePath));
+            } else if (srcFile != null && srcFile.exists()) {
+                return new FileInputStream(srcFile);
             }
         } catch (Throwable ignored) {}
-        currentFos = null;
-
-        try {
-            if (currentTempFile != null && currentTempFile.exists()) {
-                currentTempFile.delete();
-            }
-        } catch (Throwable ignored) {}
-        currentTempFile = null;
+        return null;
     }
 
     /**
-     * 兼容旧接口：小图或普通 Base64 一次性写入
+     * 兼容旧接口保留（小图或特殊场景直接传 Base64 使用）
+     * 大图请勿调用此方法，改用 saveFromNativePath
      */
     @PluginMethod
     public void saveImageToGallery(PluginCall call) {
         String base64Data = call.getString("base64Data");
-        String fileName = call.getString("fileName");
+        String fileName   = call.getString("fileName");
 
         if (base64Data == null || base64Data.isEmpty()) {
             call.reject("base64Data 不能为空");
             return;
         }
-
         if (fileName == null || fileName.isEmpty()) {
             fileName = "摄影之神_" + System.currentTimeMillis() + ".png";
         }
-
         if (base64Data.contains(",")) {
             base64Data = base64Data.substring(base64Data.indexOf(",") + 1);
         }
 
         try {
-            byte[] imageBytes = Base64.decode(base64Data, Base64.DEFAULT);
-            base64Data = null;
+            byte[] imageBytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+            base64Data = null; // GC 可及时回收
+
             Context context = getContext();
             ContentResolver resolver = context.getContentResolver();
-
-            String lower = fileName.toLowerCase();
-            String mimeType = (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) ? "image/jpeg" : "image/png";
+            String lower    = fileName.toLowerCase();
+            String mimeType = (lower.endsWith(".jpg") || lower.endsWith(".jpeg"))
+                ? "image/jpeg" : "image/png";
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ContentValues contentValues = new ContentValues();
-                contentValues.put(MediaStore.Images.Media.DISPLAY_NAME, fileName);
-                contentValues.put(MediaStore.Images.Media.MIME_TYPE, mimeType);
-                contentValues.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + File.separator + "摄影之神");
-                contentValues.put(MediaStore.Images.Media.IS_PENDING, 1);
+                ContentValues cv = new ContentValues();
+                cv.put(MediaStore.Images.Media.DISPLAY_NAME, fileName);
+                cv.put(MediaStore.Images.Media.MIME_TYPE, mimeType);
+                cv.put(MediaStore.Images.Media.IS_PENDING, 1);
 
                 Uri uri = null;
-                try {
-                    uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues);
-                } catch (Throwable insertErr) {
-                    contentValues.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES);
-                    uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues);
+                String[] relativePaths = {
+                    Environment.DIRECTORY_PICTURES + File.separator + "摄影之神",
+                    Environment.DIRECTORY_PICTURES
+                };
+                for (String rp : relativePaths) {
+                    try {
+                        cv.put(MediaStore.Images.Media.RELATIVE_PATH, rp);
+                        uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
+                        if (uri != null) break;
+                    } catch (Throwable ignored) {}
                 }
 
                 if (uri == null) {
                     call.reject("相册创建失败，系统返回空 URI");
                     return;
                 }
-
                 try (OutputStream out = resolver.openOutputStream(uri)) {
-                    if (out != null) {
-                        out.write(imageBytes);
-                        out.flush();
-                    }
+                    if (out != null) { out.write(imageBytes); out.flush(); }
                 }
-
-                contentValues.clear();
-                contentValues.put(MediaStore.Images.Media.IS_PENDING, 0);
-                try {
-                    resolver.update(uri, contentValues, null, null);
-                } catch (Throwable updateErr) {
-                    updateErr.printStackTrace();
-                }
+                cv.clear();
+                cv.put(MediaStore.Images.Media.IS_PENDING, 0);
+                try { resolver.update(uri, cv, null, null); } catch (Throwable ignored) {}
 
                 JSObject ret = new JSObject();
                 ret.put("success", true);
@@ -316,32 +234,30 @@ public class SaveImagePlugin extends Plugin {
                 ret.put("path", "Pictures/摄影之神/" + fileName);
                 call.resolve(ret);
             } else {
-                File picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
-                File appDir = new File(picturesDir, "摄影之神");
-                if (!appDir.exists()) {
-                    appDir.mkdirs();
-                }
-                File imageFile = new File(appDir, fileName);
+                File destDir = new File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                    "摄影之神"
+                );
+                if (!destDir.exists()) destDir.mkdirs();
+                File imageFile = new File(destDir, fileName);
                 try (FileOutputStream fos = new FileOutputStream(imageFile)) {
-                    fos.write(imageBytes);
-                    fos.flush();
+                    fos.write(imageBytes); fos.flush();
                 }
-
                 MediaScannerConnection.scanFile(
                     context,
                     new String[]{imageFile.getAbsolutePath()},
                     new String[]{mimeType},
-                    (scannedPath, scannedUri) -> {
+                    (p, u) -> {
                         JSObject ret = new JSObject();
                         ret.put("success", true);
-                        ret.put("path", scannedPath != null ? scannedPath : imageFile.getAbsolutePath());
+                        ret.put("path", p != null ? p : imageFile.getAbsolutePath());
                         call.resolve(ret);
                     }
                 );
             }
         } catch (Throwable t) {
             t.printStackTrace();
-            call.reject("保存到手机相册失败: " + (t.getMessage() != null ? t.getMessage() : "内存不足或系统权限限制"));
+            call.reject("保存失败: " + (t.getMessage() != null ? t.getMessage() : "内存不足或权限限制"));
         }
     }
 }
