@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ApiEndpoint, ResolutionMode } from '../types';
 import { apiService } from '../services/apiService';
 import { DECLUTTER_PRESET, storageService } from '../services/storageService';
+import { mediaService } from '../services/mediaService';
 import { calculateDimensions, detectClosestAspectRatio } from '../utils/ratioHelper';
 import {
   Wand2,
@@ -20,6 +21,7 @@ import {
   FileText,
   Globe,
   ChevronDown,
+  Download,
 } from 'lucide-react';
 
 interface SemiSynthesisModalProps {
@@ -892,6 +894,24 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                 <Wand2 className="w-4 h-4" />
                 <span>{finalImage ? '重新生图' : '开始全写实现场布景生图'}</span>
               </button>
+
+              {finalImage && (
+                <button
+                  onClick={async () => {
+                    try {
+                      onToast('正在保存大片至手机相册...', 'info');
+                      const res = await mediaService.saveToGallery(finalImage, `半合成_${character || '布景'}_${Date.now()}.png`);
+                      onToast(res.message, 'success');
+                    } catch (e: any) {
+                      onToast(e?.message || '保存失败', 'error');
+                    }
+                  }}
+                  className="px-3.5 py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-400 hover:from-pink-600 hover:to-rose-500 text-white font-bold text-xs shadow-md shadow-pink-200 flex items-center space-x-1 shrink-0 active:scale-98"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>存到相册</span>
+                </button>
+              )}
 
               {finalImage && (
                 <button

@@ -1,6 +1,23 @@
 import React, { useState } from 'react';
 import { PromptPreset } from '../types';
-import { Sparkles, Camera, Zap, Palette, Wand2, Plus, Edit3, Trash2, Check, X } from 'lucide-react';
+import {
+  Sparkles,
+  Camera,
+  Zap,
+  Palette,
+  Wand2,
+  Plus,
+  Edit3,
+  Trash2,
+  Check,
+  X,
+  Wind,
+  Cloud,
+  Scissors,
+  Shield,
+  Smile,
+  Shirt,
+} from 'lucide-react';
 
 interface PresetModalProps {
   isOpen: boolean;
@@ -47,6 +64,12 @@ export const PresetModal: React.FC<PresetModalProps> = ({
       case 'Camera': return <Camera className="w-4 h-4 text-rose-500" />;
       case 'Zap': return <Zap className="w-4 h-4 text-amber-500" />;
       case 'Palette': return <Palette className="w-4 h-4 text-fuchsia-500" />;
+      case 'Scissors': return <Scissors className="w-4 h-4 text-indigo-500" />;
+      case 'Cloud': return <Cloud className="w-4 h-4 text-cyan-500" />;
+      case 'Smile': return <Smile className="w-4 h-4 text-emerald-500" />;
+      case 'Shirt': return <Shirt className="w-4 h-4 text-blue-500" />;
+      case 'Shield': return <Shield className="w-4 h-4 text-amber-600" />;
+      case 'Wind': return <Wind className="w-4 h-4 text-teal-500" />;
       default: return <Sparkles className="w-4 h-4 text-pink-500" />;
     }
   };

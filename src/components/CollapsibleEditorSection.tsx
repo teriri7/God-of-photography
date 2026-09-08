@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Sparkles,
   Wand2,
+  Paintbrush,
 } from 'lucide-react';
 
 interface CollapsibleEditorSectionProps {
@@ -45,6 +46,11 @@ interface CollapsibleEditorSectionProps {
   onToggleSection: (section: 'layers' | 'tonal') => void;
   onUpdateLayerTransform?: (layerId: string, transform: LayerTransform) => void;
   onBakeFilter?: () => void;
+  // 蒙版与画笔控制
+  isBrushActive?: boolean;
+  onToggleBrush?: (active?: boolean) => void;
+  onAddMask?: (layerId: string) => void;
+  onRemoveMask?: (layerId: string) => void;
 }
 
 export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> = ({
@@ -65,6 +71,10 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
   onToggleSection,
   onUpdateLayerTransform,
   onBakeFilter,
+  isBrushActive,
+  onToggleBrush,
+  onAddMask,
+  onRemoveMask,
 }) => {
   const isLayersOpen = expandedSection === 'layers';
   const isTonalOpen = expandedSection === 'tonal';
@@ -216,10 +226,26 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                         <div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-pink-200/50 checkerboard-bg">
                           <img src={layer.sourceUrl} alt={layer.name} className="w-full h-full object-cover" />
                         </div>
+                        {/* 蒙版状态微缩图 */}
+                        {layer.maskDataUrl && (
+                          <div
+                            title="图层蒙版 (黑透白不透)"
+                            className="w-8 h-8 rounded-lg overflow-hidden bg-black shrink-0 border-2 border-pink-400 shadow-xs relative"
+                          >
+                            <img src={layer.maskDataUrl} alt="Mask" className="w-full h-full object-contain" />
+                          </div>
+                        )}
                         <div className="min-w-0 flex-1">
-                          <p className="text-[11px] font-bold text-slate-800 truncate leading-tight">
-                            {layer.name}
-                          </p>
+                          <div className="flex items-center space-x-1.5">
+                            <p className="text-[11px] font-bold text-slate-800 truncate leading-tight">
+                              {layer.name}
+                            </p>
+                            {layer.maskDataUrl && (
+                              <span className="text-[8px] px-1 py-0.2 bg-pink-100 text-pink-600 font-bold rounded-sm shrink-0">
+                                蒙版
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[9px] text-slate-400 font-mono">
                             {layer.width}×{layer.height}
                           </span>
@@ -281,6 +307,60 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
+                    </div>
+
+                    {/* 蒙版与画笔功能栏 */}
+                    <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-pink-100/50 text-[9px]">
+                      <div className="flex items-center space-x-1.5">
+                        {layer.maskDataUrl ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectLayer(layer.id);
+                                onToggleBrush?.(isActive ? !isBrushActive : true);
+                              }}
+                              className={`px-2 py-0.5 rounded-md flex items-center space-x-1 font-semibold transition-all ${
+                                isActive && isBrushActive
+                                  ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-xs'
+                                  : 'bg-pink-100/90 text-pink-700 hover:bg-pink-200 border border-pink-200/60'
+                              }`}
+                            >
+                              <Paintbrush className="w-2.5 h-2.5" />
+                              <span>{isActive && isBrushActive ? '画笔涂抹中' : '蒙版画笔'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRemoveMask?.(layer.id);
+                              }}
+                              className="px-1.5 py-0.5 rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                              title="移除此图层蒙版"
+                            >
+                              删除蒙版
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onAddMask?.(layer.id);
+                            }}
+                            className="px-2 py-0.5 rounded-md bg-white/90 hover:bg-pink-50 text-pink-600 hover:text-pink-700 border border-pink-200 hover:border-pink-300 font-semibold flex items-center space-x-1 transition-all"
+                          >
+                            <Paintbrush className="w-2.5 h-2.5 text-pink-500" />
+                            <span>+ 添加蒙版</span>
+                          </button>
+                        )}
+                      </div>
+                      {layer.maskDataUrl && (
+                        <span className="text-[8px] text-slate-400 font-mono">
+                          50%柔边 · 黑透白不透
+                        </span>
+                      )}
                     </div>
 
                     {/* 不透明度滑杆 */}

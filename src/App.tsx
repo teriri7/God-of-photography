@@ -10,7 +10,14 @@ import {
 } from './types';
 import { storageService } from './services/storageService';
 import { apiService } from './services/apiService';
-import { exportCompositeImage, loadImage, bakeLayerFilter, convertToJpeg } from './utils/canvasRenderer';
+import { mediaService } from './services/mediaService';
+import {
+  exportCompositeImage,
+  loadImage,
+  bakeLayerFilter,
+  convertToJpeg,
+  createDefaultWhiteMask,
+} from './utils/canvasRenderer';
 import { detectClosestAspectRatio, calculateDimensions, ResolutionMode } from './utils/ratioHelper';
 
 import { Header } from './components/Header';
@@ -89,7 +96,64 @@ export const App: React.FC = () => {
     );
   };
 
-  // 6. 异步操作指示器
+  // 6. 蒙版画笔状态与图层蒙版操作 (黑透白不透)
+  const [isMaskBrushActive, setIsMaskBrushActive] = useState<boolean>(false);
+
+  const handleAddMask = (layerId: string) => {
+    const target = layers.find((l) => l.id === layerId);
+    if (!target) return;
+    const maskDataUrl = createDefaultWhiteMask(target.width, target.height);
+    setLayers((prev) =>
+      prev.map((l) => (l.id === layerId ? { ...l, maskDataUrl } : l))
+    );
+    setActiveLayerId(layerId);
+    showToast(`已为「${target.name}」添加白色蒙版 (白不透)`, 'success');
+  };
+
+  const handleRemoveMask = (layerId: string) => {
+    setLayers((prev) =>
+      prev.map((l) => {
+        if (l.id === layerId) {
+          const next = { ...l };
+          delete next.maskDataUrl;
+          delete (next as any).maskCanvas;
+          return next;
+        }
+        return l;
+      })
+    );
+    if (isMaskBrushActive && activeLayerId === layerId) {
+      setIsMaskBrushActive(false);
+    }
+    showToast('已移除图层蒙版', 'info');
+  };
+
+  const handleUpdateLayerMask = (layerId: string, maskDataUrl: string) => {
+    setLayers((prev) =>
+      prev.map((l) => (l.id === layerId ? { ...l, maskDataUrl } : l))
+    );
+  };
+
+  const handleToggleBrush = (active?: boolean) => {
+    const targetState = active !== undefined ? active : !isMaskBrushActive;
+    if (targetState) {
+      const current = layers.find((l) => l.id === activeLayerId) || layers[layers.length - 1];
+      if (!current) {
+        showToast('请先选择或导入一个图层', 'error');
+        return;
+      }
+      if (!current.maskDataUrl) {
+        handleAddMask(current.id);
+      }
+      setIsMaskBrushActive(true);
+      showToast('蒙版画笔已开启 (画布已锁定，黑透白不透)', 'info');
+    } else {
+      setIsMaskBrushActive(false);
+      showToast('已退出蒙版画笔 (画布缩放拖拽已解锁)', 'info');
+    }
+  };
+
+  // 7. 异步操作指示器
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -117,6 +181,12 @@ export const App: React.FC = () => {
   useEffect(() => {
     storageService.savePresets(presets);
   }, [presets]);
+
+  useEffect(() => {
+    if (!presets.some((p) => p.id === selectedPresetId)) {
+      setSelectedPresetId(presets[0]?.id || 'preset-declutter');
+    }
+  }, [presets, selectedPresetId]);
 
   useEffect(() => {
     storageService.saveSimulatorMode(isSimulator);
@@ -283,28 +353,20 @@ export const App: React.FC = () => {
     }
   };
 
-  // 导出合成图
+  // 导出/保存全图层高清合成图至系统相册
   const handleExport = async () => {
     if (layers.length === 0) return;
 
     setIsExporting(true);
-    showToast('正在合成高清全图层并导出...', 'info');
+    showToast('正在合成高清全图层并保存至手机相册...', 'info');
 
     try {
-      const { dataUrl, blob } = await exportCompositeImage(layers, 'image/png');
-
-      // 浏览器端直接触发下载
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = `PinkLayer_Art_${Date.now()}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      showToast('导出成功！已保存高清图像', 'success');
+      const { dataUrl } = await exportCompositeImage(layers, 'image/png');
+      const res = await mediaService.saveToGallery(dataUrl, `摄影之神_${Date.now()}.png`);
+      showToast(res.message, 'success');
     } catch (err: any) {
-      console.error(err);
-      showToast('导出图像失败', 'error');
+      console.error('保存至手机相册失败:', err);
+      showToast(err?.message || '保存到相册失败，请重试', 'error');
     } finally {
       setIsExporting(false);
     }
@@ -485,6 +547,10 @@ export const App: React.FC = () => {
             aspectRatio={aspectRatio}
             isCompact={expandedSection !== 'none'}
             onUpdateLayerTransform={handleUpdateLayerTransform}
+            isBrushActive={isMaskBrushActive}
+            onToggleBrush={handleToggleBrush}
+            onUpdateLayerMask={handleUpdateLayerMask}
+            onAddMask={handleAddMask}
           />
 
           {/* 功能菜单栏列表（统一管理半合成、风格预设、图层调整、画面影调，支持上下拉动流畅滚动浏览，方便未来自由扩展更多功能栏） */}
@@ -506,6 +572,10 @@ export const App: React.FC = () => {
             onToggleSection={handleToggleSection}
             onUpdateLayerTransform={handleUpdateLayerTransform}
             onBakeFilter={handleBakeCurrentFilter}
+            isBrushActive={isMaskBrushActive}
+            onToggleBrush={handleToggleBrush}
+            onAddMask={handleAddMask}
+            onRemoveMask={handleRemoveMask}
           />
         </div>
 

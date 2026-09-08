@@ -44,6 +44,28 @@ export async function renderLayerToCanvas(
   const filter = layer.filter;
   const transform = layer.transform || { x: 0, y: 0, scale: 1, rotation: 0 };
 
+  // 1. 如果存在蒙版，在图层本地空间合成蒙版裁切 (黑透白不透)
+  let renderSource: CanvasImageSource = img;
+  if (layer.maskDataUrl || (layer as any).maskCanvas) {
+    try {
+      const maskImg = (layer as any).maskCanvas || (layer.maskDataUrl ? await loadImage(layer.maskDataUrl) : null);
+      if (maskImg) {
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = img.width;
+        maskCanvas.height = img.height;
+        const maskCtx = maskCanvas.getContext('2d');
+        if (maskCtx) {
+          maskCtx.drawImage(img, 0, 0, img.width, img.height);
+          maskCtx.globalCompositeOperation = 'destination-in';
+          maskCtx.drawImage(maskImg, 0, 0, img.width, img.height);
+          renderSource = maskCanvas;
+        }
+      }
+    } catch (e) {
+      console.warn('加载并应用图层蒙版失败，使用原图:', e);
+    }
+  }
+
   // 计算居中等比铺满 / 自适应尺寸
   const hRatio = targetWidth / img.width;
   const vRatio = targetHeight / img.height;
@@ -54,7 +76,7 @@ export async function renderLayerToCanvas(
   if (ignoreTransform) {
     const offsetX = (targetWidth - drawWidth) / 2;
     const offsetY = (targetHeight - drawHeight) / 2;
-    ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+    ctx.drawImage(renderSource, offsetX, offsetY, drawWidth, drawHeight);
   } else {
     // 相对基准分辨率的坐标缩放因子
     const coordScale = baseWidth > 0 ? targetWidth / baseWidth : 1;
@@ -71,7 +93,7 @@ export async function renderLayerToCanvas(
       ctx.rotate((tRot * Math.PI) / 180);
     }
     ctx.scale(tScale, tScale);
-    ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    ctx.drawImage(renderSource, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
     ctx.restore();
   }
 
@@ -95,7 +117,78 @@ export async function renderLayerToCanvas(
 }
 
 /**
- * 将图层的影调调色永久烘焙（Bake）到底层像素位图中，并重置调色参数为 0
+ * 创建指定分辨率的默认纯白蒙版（完全不透明，显示当前图层）
+ */
+export function createDefaultWhiteMask(width: number, height: number): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, width);
+  canvas.height = Math.max(1, height);
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  return canvas.toDataURL('image/png');
+}
+
+/**
+ * 在蒙版 Canvas 上绘制 50% 硬度柔边笔刷线段
+ * @param ctx 蒙版 Canvas 渲染上下文
+ * @param x0 起点 X
+ * @param y0 起点 Y
+ * @param x1 终点 X
+ * @param y1 终点 Y
+ * @param radius 笔刷半径
+ * @param isBlack true=画黑(擦除/透出下层), false=画白(恢复/显示本层)
+ * @param hardness 笔刷硬度（0~1，默认 0.5 即 50%）
+ */
+export function drawMaskBrushStroke(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  radius: number,
+  isBlack: boolean,
+  hardness: number = 0.5
+): void {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const dist = Math.hypot(dx, dy);
+  const step = Math.max(1, radius * 0.1);
+  const steps = Math.max(1, Math.ceil(dist / step));
+
+  ctx.save();
+  // 黑笔：通过 destination-out 擦减透明度；白笔：通过 source-over 涂回纯白不透明
+  ctx.globalCompositeOperation = isBlack ? 'destination-out' : 'source-over';
+
+  const innerRadius = Math.max(0, radius * Math.min(0.99, Math.max(0, hardness)));
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = x0 + dx * t;
+    const y = y0 + dy * t;
+
+    const grad = ctx.createRadialGradient(x, y, innerRadius, x, y, radius);
+    if (isBlack) {
+      grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    } else {
+      grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    }
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * 将图层的影调调色与蒙版永久烘焙（Bake）到底层像素位图中，并重置调色参数为 0
  */
 export async function bakeLayerFilter(layer: Layer): Promise<Layer> {
   const filter = layer.filter;
@@ -109,8 +202,9 @@ export async function bakeLayerFilter(layer: Layer): Promise<Layer> {
     filter.temperature !== 0 ||
     filter.tint !== 0 ||
     filter.saturation !== 0;
+  const hasMask = !!layer.maskDataUrl;
 
-  if (!hasAdjustments) return layer;
+  if (!hasAdjustments && !hasMask) return layer;
 
   // 使用图层自身原始分辨率烘焙像素，保留其独立位移与缩放 transform
   const bakedCanvas = await renderLayerToCanvas(
@@ -126,6 +220,7 @@ export async function bakeLayerFilter(layer: Layer): Promise<Layer> {
   return {
     ...layer,
     sourceUrl: bakedDataUrl,
+    maskDataUrl: undefined, // 烘焙后蒙版已永久固化至像素中，重置蒙版
     filter: {
       exposure: 0,
       contrast: 0,
@@ -402,3 +497,82 @@ export async function exportCompositeImage(
 
   return { dataUrl, blob };
 }
+
+/**
+ * 将视口屏幕触控点坐标转换为图层本地原生像素坐标
+ */
+export function screenToLayerCoords(
+  clientX: number,
+  clientY: number,
+  canvas: HTMLCanvasElement,
+  layer: Layer,
+  baseWidth: number,
+  baseHeight: number
+): { x: number; y: number } | null {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+
+  // 1. 转换到 Canvas 真实画布像素坐标
+  const canvasX = (clientX - rect.left) * (canvas.width / rect.width);
+  const canvasY = (clientY - rect.top) * (canvas.height / rect.height);
+
+  // 2. 获取图层变换参数
+  const transform = layer.transform || { x: 0, y: 0, scale: 1, rotation: 0 };
+  const coordScale = baseWidth > 0 ? canvas.width / baseWidth : 1;
+  const tX = (transform.x || 0) * coordScale;
+  const tY = (transform.y || 0) * coordScale;
+  const tScale = transform.scale ?? 1;
+  const tRot = transform.rotation ?? 0;
+
+  // 3. 计算居中等比绘制尺寸
+  const hRatio = canvas.width / layer.width;
+  const vRatio = canvas.height / layer.height;
+  const ratio = Math.min(hRatio, vRatio);
+  const drawWidth = layer.width * ratio;
+  const drawHeight = layer.height * ratio;
+
+  // 4. 中心点坐标
+  const centerX = canvas.width / 2 + tX;
+  const centerY = canvas.height / 2 + tY;
+
+  // 5. 相对中心点偏移
+  const dx = canvasX - centerX;
+  const dy = canvasY - centerY;
+
+  // 6. 逆旋转
+  const rad = (-tRot * Math.PI) / 180;
+  const rx = dx * Math.cos(rad) - dy * Math.sin(rad);
+  const ry = dx * Math.sin(rad) + dy * Math.cos(rad);
+
+  // 7. 逆缩放
+  const sx = rx / (tScale || 1);
+  const sy = ry / (tScale || 1);
+
+  // 8. 转换到图层绘制左上角为原点
+  const localX = sx + drawWidth / 2;
+  const localY = sy + drawHeight / 2;
+
+  // 9. 转换到图层本地原始分辨率坐标
+  const nativeX = localX / ratio;
+  const nativeY = localY / ratio;
+
+  return { x: nativeX, y: nativeY };
+}
+
+/**
+ * 将视口屏幕笔刷像素半径转换为图层本地原生像素半径
+ */
+export function screenToLayerRadius(
+  screenRadius: number,
+  canvas: HTMLCanvasElement,
+  layer: Layer
+): number {
+  const rect = canvas.getBoundingClientRect();
+  const scaleToCanvas = rect.width > 0 ? canvas.width / rect.width : 1;
+  const hRatio = canvas.width / layer.width;
+  const vRatio = canvas.height / layer.height;
+  const ratio = Math.min(hRatio, vRatio);
+  const tScale = layer.transform?.scale || 1;
+  return Math.max(1, (screenRadius * scaleToCanvas) / (ratio * (tScale || 1)));
+}
+

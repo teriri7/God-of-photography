@@ -48,6 +48,7 @@ export interface Layer {
   height: number;
   filter: LayerFilterSettings;
   transform?: LayerTransform;
+  maskDataUrl?: string; // 蒙版图片数据 (纯白=不透明显示当前图层，纯黑=透明透出下层)
   createdAt: number;
 }
 

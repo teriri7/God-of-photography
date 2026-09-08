@@ -162,14 +162,14 @@ export const ControlBar: React.FC<ControlBarProps> = ({
           <span>{hasInputImage ? '换图' : '打开图片'}</span>
         </button>
 
-        {/* 导出图片 (移至更换图片旁边) */}
+        {/* 保存图片至相册 */}
         <button
           onClick={onExport}
           disabled={!hasInputImage || isExporting}
           className="flex-1 py-2.5 px-2 rounded-2xl bg-white/80 hover:bg-pink-100/90 disabled:opacity-40 text-pink-700 font-bold text-xs flex items-center justify-center space-x-1 border border-pink-200/80 shadow-xs active:scale-95 transition-all truncate"
         >
           <Download className="w-3.5 h-3.5 text-pink-600 shrink-0" />
-          <span>{isExporting ? '导出中' : '导出图片'}</span>
+          <span>{isExporting ? '保存中' : '保存图片'}</span>
         </button>
 
         {/* 开始图生图处理 */}
