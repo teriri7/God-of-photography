@@ -33,11 +33,11 @@ jobs:
       - name: 同步 Capacitor 资源到 Android
         run: npx cap sync android
 
-      - name: 设置 Java 17 (Gradle 运行环境)
+      - name: 设置 Java 21 (Gradle 运行环境)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: 17
+          java-version: 21
 
       - name: 设置 Android SDK 构建工具
         uses: android-actions/setup-android@v3
