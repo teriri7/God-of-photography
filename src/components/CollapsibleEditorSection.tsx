@@ -7,6 +7,7 @@ import {
   DEFAULT_LAYER_TRANSFORM,
   PromptPreset,
 } from '../types';
+import { PinkSlider } from './PinkSlider';
 import {
   Layers,
   Sliders,
@@ -368,14 +369,14 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                       <span className="text-[9px] text-slate-500 font-medium shrink-0">
                         不透明度: <strong className="font-mono text-pink-600">{layer.opacity}%</strong>
                       </span>
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
+                      <PinkSlider
+                        min={0}
+                        max={100}
+                        step={1}
+                        defaultValue={100}
                         value={layer.opacity}
-                        onChange={(e) => onChangeOpacity(layer.id, Number(e.target.value))}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-full pink-slider"
+                        onChange={(val) => onChangeOpacity(layer.id, val)}
+                        className="flex-1"
                       />
                     </div>
 
@@ -385,20 +386,20 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                         <span className="text-[9px] text-slate-500 font-medium shrink-0">
                           缩放: <strong className="font-mono text-pink-600">{Math.round((layer.transform?.scale ?? 1) * 100)}%</strong>
                         </span>
-                        <input
-                          type="range"
-                          min="10"
-                          max="300"
+                        <PinkSlider
+                          min={10}
+                          max={300}
+                          step={1}
+                          defaultValue={100}
                           value={Math.round((layer.transform?.scale ?? 1) * 100)}
-                          onChange={(e) => {
-                            const scaleVal = Math.max(0.1, Math.min(5, Number(e.target.value) / 100));
+                          onChange={(val) => {
+                            const scaleVal = Math.max(0.1, Math.min(5, val / 100));
                             onUpdateLayerTransform(layer.id, {
                               ...(layer.transform || DEFAULT_LAYER_TRANSFORM),
                               scale: scaleVal,
                             });
                           }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-full pink-slider"
+                          className="flex-1"
                         />
                         <button
                           type="button"
@@ -489,13 +490,13 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                       {activeLayer.filter.exposure > 0 ? `+${activeLayer.filter.exposure}` : activeLayer.filter.exposure}
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="-100"
-                    max="100"
+                  <PinkSlider
+                    min={-100}
+                    max={100}
+                    step={1}
+                    defaultValue={0}
                     value={activeLayer.filter.exposure}
-                    onChange={(e) => handleFilterChange('exposure', Number(e.target.value))}
-                    className="w-full pink-slider"
+                    onChange={(val) => handleFilterChange('exposure', val)}
                   />
                 </div>
 
@@ -507,13 +508,13 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                       {activeLayer.filter.contrast > 0 ? `+${activeLayer.filter.contrast}` : activeLayer.filter.contrast}
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="-100"
-                    max="100"
+                  <PinkSlider
+                    min={-100}
+                    max={100}
+                    step={1}
+                    defaultValue={0}
                     value={activeLayer.filter.contrast}
-                    onChange={(e) => handleFilterChange('contrast', Number(e.target.value))}
-                    className="w-full pink-slider"
+                    onChange={(val) => handleFilterChange('contrast', val)}
                   />
                 </div>
 
@@ -525,13 +526,13 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                       {activeLayer.filter.highlights > 0 ? `+${activeLayer.filter.highlights}` : activeLayer.filter.highlights}
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="-100"
-                    max="100"
+                  <PinkSlider
+                    min={-100}
+                    max={100}
+                    step={1}
+                    defaultValue={0}
                     value={activeLayer.filter.highlights}
-                    onChange={(e) => handleFilterChange('highlights', Number(e.target.value))}
-                    className="w-full pink-slider"
+                    onChange={(val) => handleFilterChange('highlights', val)}
                   />
                 </div>
 
@@ -543,13 +544,13 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                       {activeLayer.filter.shadows > 0 ? `+${activeLayer.filter.shadows}` : activeLayer.filter.shadows}
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="-100"
-                    max="100"
+                  <PinkSlider
+                    min={-100}
+                    max={100}
+                    step={1}
+                    defaultValue={0}
                     value={activeLayer.filter.shadows}
-                    onChange={(e) => handleFilterChange('shadows', Number(e.target.value))}
-                    className="w-full pink-slider"
+                    onChange={(val) => handleFilterChange('shadows', val)}
                   />
                 </div>
 
@@ -561,13 +562,13 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                       {activeLayer.filter.whites > 0 ? `+${activeLayer.filter.whites}` : activeLayer.filter.whites}
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="-100"
-                    max="100"
+                  <PinkSlider
+                    min={-100}
+                    max={100}
+                    step={1}
+                    defaultValue={0}
                     value={activeLayer.filter.whites}
-                    onChange={(e) => handleFilterChange('whites', Number(e.target.value))}
-                    className="w-full pink-slider"
+                    onChange={(val) => handleFilterChange('whites', val)}
                   />
                 </div>
 
@@ -579,13 +580,13 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                       {activeLayer.filter.blacks > 0 ? `+${activeLayer.filter.blacks}` : activeLayer.filter.blacks}
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="-100"
-                    max="100"
+                  <PinkSlider
+                    min={-100}
+                    max={100}
+                    step={1}
+                    defaultValue={0}
                     value={activeLayer.filter.blacks}
-                    onChange={(e) => handleFilterChange('blacks', Number(e.target.value))}
-                    className="w-full pink-slider"
+                    onChange={(val) => handleFilterChange('blacks', val)}
                   />
                 </div>
 
@@ -597,13 +598,13 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                       {activeLayer.filter.temperature > 0 ? `+${activeLayer.filter.temperature}` : activeLayer.filter.temperature}
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="-100"
-                    max="100"
+                  <PinkSlider
+                    min={-100}
+                    max={100}
+                    step={1}
+                    defaultValue={0}
                     value={activeLayer.filter.temperature}
-                    onChange={(e) => handleFilterChange('temperature', Number(e.target.value))}
-                    className="w-full pink-slider"
+                    onChange={(val) => handleFilterChange('temperature', val)}
                   />
                 </div>
 
@@ -615,13 +616,13 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                       {activeLayer.filter.tint > 0 ? `+${activeLayer.filter.tint}` : activeLayer.filter.tint}
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="-100"
-                    max="100"
+                  <PinkSlider
+                    min={-100}
+                    max={100}
+                    step={1}
+                    defaultValue={0}
                     value={activeLayer.filter.tint}
-                    onChange={(e) => handleFilterChange('tint', Number(e.target.value))}
-                    className="w-full pink-slider"
+                    onChange={(val) => handleFilterChange('tint', val)}
                   />
                 </div>
 
@@ -633,13 +634,13 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
                       {activeLayer.filter.saturation > 0 ? `+${activeLayer.filter.saturation}` : activeLayer.filter.saturation}
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="-100"
-                    max="100"
+                  <PinkSlider
+                    min={-100}
+                    max={100}
+                    step={1}
+                    defaultValue={0}
                     value={activeLayer.filter.saturation}
-                    onChange={(e) => handleFilterChange('saturation', Number(e.target.value))}
-                    className="w-full pink-slider"
+                    onChange={(val) => handleFilterChange('saturation', val)}
                   />
                 </div>
 

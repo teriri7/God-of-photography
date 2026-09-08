@@ -6,6 +6,7 @@ import {
   screenToLayerRadius,
   drawMaskBrushStroke,
 } from '../utils/canvasRenderer';
+import { PinkSlider } from './PinkSlider';
 import {
   ImagePlus,
   Sparkles,
@@ -491,15 +492,14 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
                 <span className="text-[10px] text-pink-300 shrink-0 font-mono">
                   {brushSize}px
                 </span>
-                <input
-                  type="range"
-                  min="8"
-                  max="120"
+                <PinkSlider
+                  min={8}
+                  max={120}
+                  step={1}
+                  defaultValue={30}
                   value={brushSize}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onChange={(e) => setBrushSize(Number(e.target.value))}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-full pink-slider cursor-pointer"
+                  onChange={setBrushSize}
+                  className="flex-1"
                 />
               </div>
             </div>
