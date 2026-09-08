@@ -1,6 +1,6 @@
-﻿{
-  "appId": "com.pinklayer.ai",
-  "appName": "PinkLayer Studio",
+{
+  "appId": "com.godofphotography.app",
+  "appName": "摄影之神",
   "webDir": "dist",
   "server": {
     "androidScheme": "https",

@@ -66,7 +66,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
                 onChange={(e) => onChangeEndpoint(e.target.value)}
                 className="w-full glass-input appearance-none px-2 py-1.5 rounded-xl text-xs font-semibold text-pink-700 pr-5 truncate"
               >
-                {endpoints.map((ep) => (
+                {(endpoints || []).map((ep) => (
                   <option key={ep.id} value={ep.id}>
                     {ep.name}
                   </option>
@@ -88,7 +88,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
                 onChange={(e) => onChangeModel(e.target.value)}
                 className="w-full glass-input appearance-none px-2 py-1.5 rounded-xl text-xs font-medium text-slate-800 pr-5 truncate"
               >
-                {models.map((model) => (
+                {(models || []).map((model) => (
                   <option key={model} value={model}>
                     {model}
                   </option>
@@ -99,48 +99,42 @@ export const ControlBar: React.FC<ControlBarProps> = ({
           </div>
         </div>
 
-        {/* 画面比例与分辨率快捷 Pill */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-0.5">
-          {/* 画面比例 */}
-          <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar py-0.5">
-            <span className="text-[10px] text-slate-500 font-medium shrink-0 flex items-center mr-0.5">
-              <Ratio className="w-3 h-3 text-pink-500 mr-0.5" /> 比例:
-            </span>
-            {ASPECT_RATIOS.map((ratio) => {
-              const isSelected = aspectRatio === ratio;
-              const isAuto = autoDetectedRatio === ratio;
-              return (
-                <button
-                  key={ratio}
-                  onClick={() => onChangeAspectRatio(ratio)}
-                  className={`relative px-2 py-0.8 rounded-lg text-[10px] font-semibold shrink-0 transition-all ${
-                    isSelected
-                      ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-xs'
-                      : 'bg-white/70 hover:bg-pink-100 text-slate-600 border border-pink-100'
-                  }`}
-                >
-                  {ratio}
-                  {isAuto && (
-                    <span className="ml-1 text-[8px] bg-pink-100/90 text-pink-600 px-1 rounded-full font-bold">
-                      原图
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+        {/* 画面比例下拉选择与分辨率精度切换 */}
+        <div className="grid grid-cols-2 gap-2 pt-0.5">
+          {/* 画面比例下拉选择 */}
+          <div className="flex items-center space-x-1 min-w-0">
+            <div className="flex items-center space-x-1 text-pink-600 shrink-0 text-xs font-bold">
+              <Ratio className="w-3.5 h-3.5" />
+              <span>比例:</span>
+            </div>
+            <div className="relative flex-1 min-w-0">
+              <select
+                value={aspectRatio}
+                onChange={(e) => onChangeAspectRatio(e.target.value)}
+                className="w-full glass-input appearance-none px-2 py-1.5 rounded-xl text-xs font-semibold text-slate-800 pr-5 truncate"
+              >
+                {ASPECT_RATIOS.map((ratio) => (
+                  <option key={ratio} value={ratio}>
+                    {ratio} {autoDetectedRatio === ratio ? '(原图匹配)' : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3 h-3 text-pink-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
           </div>
 
           {/* 分辨率 1K / 2K / 4K 模式 */}
-          <div className="flex items-center space-x-1 shrink-0">
-            <span className="text-[10px] text-slate-500 font-medium flex items-center mr-1">
-              <Maximize2 className="w-3 h-3 text-pink-500 mr-0.5" /> 分辨率:
-            </span>
-            <div className="flex bg-pink-100/60 p-0.5 rounded-lg border border-pink-200/50">
+          <div className="flex items-center space-x-1 min-w-0 justify-end">
+            <div className="flex items-center space-x-1 text-pink-600 shrink-0 text-xs font-bold mr-0.5">
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span>精度:</span>
+            </div>
+            <div className="flex bg-pink-100/60 p-0.5 rounded-xl border border-pink-200/50">
               {RESOLUTION_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
                   onClick={() => onChangeResolutionMode(opt.value)}
-                  className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all ${
+                  className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${
                     resolutionMode === opt.value
                       ? 'bg-white text-pink-600 shadow-xs'
                       : 'text-slate-600 hover:text-pink-600'
@@ -148,7 +142,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
                 >
                   {opt.label}
                   {opt.value === '4K' && (
-                    <span className="ml-0.5 text-[8px] text-amber-500 font-extrabold">★</span>
+                    <span className="ml-0.5 text-[9px] text-amber-500 font-extrabold">★</span>
                   )}
                 </button>
               ))}

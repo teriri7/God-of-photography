@@ -15,7 +15,7 @@ const STORAGE_KEYS = {
 
 export const DEFAULT_API_CONFIG: ApiConfig = {
   baseUrl: 'https://api.momoapi.icu/',
-  apiKey: 'sk-HopXIFgvhinItOuMgOVUGT8Z80PuINBhGr4FKK7ZDW2VZ06J',
+  apiKey: '',
   selectedModel: '[yu]gemini-3.1-flash-lite-image',
 };
 
@@ -24,7 +24,7 @@ export const DEFAULT_ENDPOINTS: ApiEndpoint[] = [
     id: 'endpoint-momo',
     name: 'MomoAPI',
     baseUrl: 'https://api.momoapi.icu/',
-    apiKey: 'sk-HopXIFgvhinItOuMgOVUGT8Z80PuINBhGr4FKK7ZDW2VZ06J',
+    apiKey: '',
     models: [
       '[yu]gemini-3.1-flash-lite-image',
       '[yu1]gemini-3.1-flash-image',
@@ -91,16 +91,29 @@ export const storageService = {
       const oldConfig = localStorage.getItem(STORAGE_KEYS.API_CONFIG);
       if (oldConfig) {
         const parsedOld = JSON.parse(oldConfig);
+        let models = DEFAULT_ENDPOINTS[0].models;
+        try {
+          const rawModels = localStorage.getItem(STORAGE_KEYS.MODELS);
+          if (rawModels) {
+            const parsedModels = JSON.parse(rawModels);
+            if (Array.isArray(parsedModels) && parsedModels.length > 0) {
+              models = parsedModels;
+            }
+          }
+        } catch {}
+
         const migrated: ApiEndpoint = {
           id: 'endpoint-migrated',
           name: '默认线路',
           baseUrl: parsedOld.baseUrl || DEFAULT_API_CONFIG.baseUrl,
           apiKey: parsedOld.apiKey || DEFAULT_API_CONFIG.apiKey,
-          models: this.getModels(),
+          models,
           selectedModel: parsedOld.selectedModel || DEFAULT_API_CONFIG.selectedModel,
           selectedVisionModel: 'tsc1-gpt-5.6-sol',
         };
-        this.saveEndpoints([migrated]);
+        try {
+          localStorage.setItem(STORAGE_KEYS.API_ENDPOINTS, JSON.stringify([migrated]));
+        } catch {}
         return [migrated];
       }
     } catch (e) {
@@ -124,8 +137,7 @@ export const storageService = {
     } catch (e) {
       console.error('Failed to get active endpoint id:', e);
     }
-    const endpoints = this.getEndpoints();
-    return endpoints[0]?.id || DEFAULT_ENDPOINTS[0].id;
+    return DEFAULT_ENDPOINTS[0].id;
   },
 
   saveActiveEndpointId(id: string): void {
@@ -138,7 +150,10 @@ export const storageService = {
 
   getActiveEndpoint(): ApiEndpoint {
     const endpoints = this.getEndpoints();
-    const activeId = this.getActiveEndpointId();
+    let activeId = '';
+    try {
+      activeId = localStorage.getItem(STORAGE_KEYS.ACTIVE_ENDPOINT_ID) || '';
+    } catch {}
     return endpoints.find((e) => e.id === activeId) || endpoints[0] || DEFAULT_ENDPOINTS[0];
   },
 

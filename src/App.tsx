@@ -44,7 +44,14 @@ export const App: React.FC = () => {
   const [isSemiSynthesisOpen, setIsSemiSynthesisOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
-  // 5. 异步操作指示器
+  // 5. 编辑区域互斥状态 ('none' | 'layers' | 'tonal')
+  const [expandedSection, setExpandedSection] = useState<'none' | 'layers' | 'tonal'>('none');
+
+  const handleToggleSection = (section: 'layers' | 'tonal') => {
+    setExpandedSection((prev) => (prev === section ? 'none' : section));
+  };
+
+  // 6. 异步操作指示器
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -395,16 +402,38 @@ export const App: React.FC = () => {
 
         {/* 中间主滚动视图 */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar flex flex-col justify-start pb-2">
-          {/* 画布预览视窗 */}
+          {/* 画布预览视窗 (展开图层或影调时平滑自适应缩小至 60% 紧凑模式) */}
           <CanvasViewport
             layers={layers}
             isGenerating={isGenerating}
             onPickImage={handleTriggerPickImage}
             activeLayerId={activeLayerId}
             aspectRatio={aspectRatio}
+            isCompact={expandedSection !== 'none'}
           />
 
-          {/* 直接在图片下方：折叠式图层管理与 Camera Raw 影调面板 */}
+          {/* 预设与半合成栏（位于图片正下方；展开图层/影调时自动平滑收起以留足调色空间） */}
+          <div
+            className={`transition-all duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${
+              expandedSection === 'none'
+                ? 'max-h-48 opacity-100 transform translate-y-0 pointer-events-auto'
+                : 'max-h-0 opacity-0 -translate-y-2 pointer-events-none'
+            }`}
+          >
+            <PresetBar
+              currentPreset={presets.find((p) => p.id === selectedPresetId)}
+              onOpenPresetModal={() => setIsPresetModalOpen(true)}
+              onOpenSemiSynthesis={() => {
+                if (layers.length === 0) {
+                  showToast('请先打开或导入一张图片', 'error');
+                  return;
+                }
+                setIsSemiSynthesisOpen(true);
+              }}
+            />
+          </div>
+
+          {/* 折叠式图层管理与 Camera Raw 影调面板 (互斥展开联动) */}
           <CollapsibleEditorSection
             layers={layers}
             activeLayerId={activeLayerId}
@@ -416,19 +445,8 @@ export const App: React.FC = () => {
             onDuplicateLayer={handleDuplicateLayer}
             onChangeOpacity={handleChangeOpacity}
             onUpdateFilter={handleUpdateFilter}
-          />
-
-          {/* 预设条（单独放到上方的半合成卡片 + 选择预设按钮） */}
-          <PresetBar
-            currentPreset={presets.find((p) => p.id === selectedPresetId)}
-            onOpenPresetModal={() => setIsPresetModalOpen(true)}
-            onOpenSemiSynthesis={() => {
-              if (layers.length === 0) {
-                showToast('请先打开或导入一张图片', 'error');
-                return;
-              }
-              setIsSemiSynthesisOpen(true);
-            }}
+            expandedSection={expandedSection}
+            onToggleSection={handleToggleSection}
           />
         </div>
 

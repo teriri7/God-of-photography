@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Layer, LayerFilterSettings, DEFAULT_FILTER_SETTINGS } from '../types';
 import {
   Layers,
@@ -26,6 +26,8 @@ interface CollapsibleEditorSectionProps {
   onDuplicateLayer: (id: string) => void;
   onChangeOpacity: (id: string, opacity: number) => void;
   onUpdateFilter: (layerId: string, filter: LayerFilterSettings) => void;
+  expandedSection: 'none' | 'layers' | 'tonal';
+  onToggleSection: (section: 'layers' | 'tonal') => void;
 }
 
 export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> = ({
@@ -39,10 +41,11 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
   onDuplicateLayer,
   onChangeOpacity,
   onUpdateFilter,
+  expandedSection,
+  onToggleSection,
 }) => {
-  // 两个部分默认均为折叠状态
-  const [isLayersOpen, setIsLayersOpen] = useState(false);
-  const [isTonalOpen, setIsTonalOpen] = useState(false);
+  const isLayersOpen = expandedSection === 'layers';
+  const isTonalOpen = expandedSection === 'tonal';
 
   const activeLayer = layers.find((l) => l.id === activeLayerId) || layers[layers.length - 1] || null;
 
@@ -65,10 +68,13 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
   return (
     <div className="w-full px-3 py-1.5 space-y-2">
       {/* 1. 折叠栏：图层调整 */}
-      <div className="glass-panel rounded-2xl overflow-hidden border border-pink-200/50 shadow-xs transition-all duration-200">
-        <button
-          onClick={() => setIsLayersOpen(!isLayersOpen)}
-          className="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-white/40 active:bg-white/60 transition-colors"
+      <div className="glass-panel rounded-2xl overflow-hidden border border-pink-200/50 shadow-xs transition-all duration-300">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => onToggleSection('layers')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleSection('layers'); }}
+          className="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-white/40 active:bg-white/60 transition-colors cursor-pointer select-none"
         >
           <div className="flex items-center space-x-2">
             <div className="w-5 h-5 rounded-md bg-pink-100 text-pink-600 flex items-center justify-center">
@@ -87,7 +93,7 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
             </span>
             {isLayersOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </div>
-        </button>
+        </div>
 
         {/* 图层展开内容 */}
         {isLayersOpen && (
@@ -207,10 +213,13 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
       </div>
 
       {/* 2. 折叠栏：画面影调调整 (Camera Raw) */}
-      <div className="glass-panel rounded-2xl overflow-hidden border border-pink-200/50 shadow-xs transition-all duration-200">
-        <button
-          onClick={() => setIsTonalOpen(!isTonalOpen)}
-          className="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-white/40 active:bg-white/60 transition-colors"
+      <div className="glass-panel rounded-2xl overflow-hidden border border-pink-200/50 shadow-xs transition-all duration-300">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => onToggleSection('tonal')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleSection('tonal'); }}
+          className="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-white/40 active:bg-white/60 transition-colors cursor-pointer select-none"
         >
           <div className="flex items-center space-x-2">
             <div className="w-5 h-5 rounded-md bg-pink-100 text-pink-600 flex items-center justify-center">
@@ -240,7 +249,7 @@ export const CollapsibleEditorSection: React.FC<CollapsibleEditorSectionProps> =
             </span>
             {isTonalOpen ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
           </div>
-        </button>
+        </div>
 
         {/* 影调展开内容：曝光、对比度、高光、阴影、白色、黑色、色温、色调、饱和度 */}
         {isTonalOpen && (

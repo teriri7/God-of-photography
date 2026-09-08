@@ -9,6 +9,7 @@ interface CanvasViewportProps {
   onPickImage: () => void;
   activeLayerId: string | null;
   aspectRatio: string;
+  isCompact?: boolean;
 }
 
 export const CanvasViewport: React.FC<CanvasViewportProps> = ({
@@ -17,20 +18,21 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   onPickImage,
   activeLayerId,
   aspectRatio,
+  isCompact = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // 根据画面比例计算容器样式
-  const getAspectRatioPadding = () => {
+  // 根据画面比例计算 CSS aspectRatio 表达式，确保横屏、竖屏、方形均完美自适应视口高度
+  const getAspectRatioValue = () => {
     switch (aspectRatio) {
-      case '1:1': return 'aspect-square';
-      case '2:3': return 'aspect-[2/3]';
-      case '3:2': return 'aspect-[3/2]';
-      case '9:16': return 'aspect-[9/16]';
-      case '16:9': return 'aspect-[16/9]';
-      case '3:4': return 'aspect-[3/4]';
-      case '4:3': return 'aspect-[4/3]';
-      default: return 'aspect-square';
+      case '1:1': return '1 / 1';
+      case '2:3': return '2 / 3';
+      case '3:2': return '3 / 2';
+      case '9:16': return '9 / 16';
+      case '16:9': return '16 / 9';
+      case '3:4': return '3 / 4';
+      case '4:3': return '4 / 3';
+      default: return '1 / 1';
     }
   };
 
@@ -39,21 +41,40 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
     if (!canvasRef.current || layers.length === 0) return;
     
     let isCancelled = false;
+    let animFrameId: number | null = null;
     const canvas = canvasRef.current;
 
-    // 默认以第一个图层或标准高清尺寸为基准
+    // 默认以第一个图层或标准高清尺寸为基准，但在交互视口中限制最大渲染尺寸以确保 60fps 流畅调色拖动
     const baseLayer = layers[0];
-    const width = baseLayer ? baseLayer.width : 1024;
-    const height = baseLayer ? baseLayer.height : 1024;
+    const rawW = baseLayer ? baseLayer.width : 1024;
+    const rawH = baseLayer ? baseLayer.height : 1024;
 
-    renderLayersComposite(layers, canvas, width, height).catch((err) => {
-      if (!isCancelled) {
-        console.error('Error rendering canvas composite:', err);
+    const maxDim = 960;
+    let width = rawW;
+    let height = rawH;
+    if (width > maxDim || height > maxDim) {
+      if (width > height) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
       }
+    }
+
+    animFrameId = requestAnimationFrame(() => {
+      renderLayersComposite(layers, canvas, width, height).catch((err) => {
+        if (!isCancelled) {
+          console.error('Error rendering canvas composite:', err);
+        }
+      });
     });
 
     return () => {
       isCancelled = true;
+      if (animFrameId) {
+        cancelAnimationFrame(animFrameId);
+      }
     };
   }, [layers]);
 
@@ -61,9 +82,18 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
   const activeLayer = layers.find((l) => l.id === activeLayerId);
 
   return (
-    <div className="relative w-full flex items-center justify-center p-3">
-      {/* 画布外框包装器 */}
-      <div className={`relative w-full max-w-[480px] ${getAspectRatioPadding()} max-h-[50vh] rounded-3xl overflow-hidden glass-panel p-1.5 shadow-xl shadow-pink-200/50 transition-all duration-300`}>
+    <div
+      className={`relative w-full flex items-center justify-center px-3 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        isCompact ? 'h-[235px] py-1' : 'h-[290px] py-1.5'
+      }`}
+    >
+      {/* 画布外框包装器：展开调色/图层时自适应平滑缩小至约 80% 大小 */}
+      <div
+        style={{ aspectRatio: getAspectRatioValue() }}
+        className={`relative h-full max-h-full max-w-full rounded-3xl overflow-hidden glass-panel p-1.5 shadow-xl shadow-pink-200/50 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] flex items-center justify-center ${
+          isCompact ? 'ring-2 ring-pink-400/50 shadow-pink-300/40' : ''
+        }`}
+      >
         {/* 透明棋盘格背景 */}
         <div className="relative w-full h-full rounded-[22px] overflow-hidden checkerboard-bg flex items-center justify-center">
           {hasLayers ? (
@@ -112,13 +142,17 @@ export const CanvasViewport: React.FC<CanvasViewportProps> = ({
 
           {/* 浮动当前图层提示胶囊 */}
           {hasLayers && activeLayer && (
-            <div className="absolute bottom-2 left-2 right-2 px-3 py-1.5 rounded-full glass-panel-subtle flex items-center justify-between text-xs text-slate-700 pointer-events-none">
-              <span className="font-medium truncate max-w-[150px]">
-                当前图层: <strong className="text-pink-600 font-semibold">{activeLayer.name}</strong>
+            <div
+              className={`absolute bottom-2 left-2 right-2 px-2.5 py-1 rounded-full glass-panel-subtle flex items-center justify-between text-slate-700 pointer-events-none transition-all ${
+                isCompact ? 'text-[9px] py-0.5' : 'text-xs'
+              }`}
+            >
+              <span className="font-medium truncate max-w-[130px]">
+                当前: <strong className="text-pink-600 font-semibold">{activeLayer.name}</strong>
               </span>
-              <div className="flex items-center space-x-2 text-[10px] text-slate-500 font-mono">
-                <span>不透明度: {activeLayer.opacity}%</span>
-                <span>{activeLayer.visible ? <Eye className="w-3 h-3 text-emerald-500 inline" /> : <EyeOff className="w-3 h-3 text-slate-400 inline" />}</span>
+              <div className="flex items-center space-x-1.5 text-[10px] text-slate-500 font-mono">
+                <span>{activeLayer.opacity}%</span>
+                <span>{activeLayer.visible ? <Eye className="w-2.5 h-2.5 text-emerald-500 inline" /> : <EyeOff className="w-2.5 h-2.5 text-slate-400 inline" />}</span>
               </div>
             </div>
           )}

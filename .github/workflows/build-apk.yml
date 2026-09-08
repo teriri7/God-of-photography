@@ -1,4 +1,4 @@
-﻿name: 自动构建 Android APK
+name: 自动构建 Android APK
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: 安装项目依赖
@@ -53,19 +53,19 @@ jobs:
       - name: 重命名 APK 文件
         run: |
           mkdir -p build-output
-          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/PinkLayer-Studio-latest.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/摄影之神-latest.apk
 
       - name: 上传 APK 构建产物 (Artifacts)
         uses: actions/upload-artifact@v4
         with:
-          name: PinkLayer-Studio-APK
-          path: build-output/PinkLayer-Studio-latest.apk
+          name: 摄影之神-APK
+          path: build-output/摄影之神-latest.apk
           retention-days: 30
 
       - name: 自动创建 Release 发布 (如果是 Tag 触发)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: build-output/PinkLayer-Studio-latest.apk
+          files: build-output/摄影之神-latest.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

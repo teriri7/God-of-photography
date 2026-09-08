@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { PromptPreset } from '../types';
 import { Sparkles, Wand2, ChevronRight } from 'lucide-react';
 
@@ -26,7 +26,7 @@ export const PresetBar: React.FC<PresetBarProps> = ({
           </div>
           <div className="text-left truncate">
             <div className="flex items-center space-x-1.5">
-              <span className="text-xs font-extrabold tracking-wide">半合成 (无垂悬布景)</span>
+              <span className="text-xs font-extrabold tracking-wide">半合成</span>
               <span className="text-[9px] px-1.5 py-0.2 bg-white/30 rounded-full font-semibold">
                 场照除杂+角色布景
               </span>

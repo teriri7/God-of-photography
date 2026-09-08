@@ -405,7 +405,7 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                       onChange={(e) => handleEndpointChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-semibold text-pink-700 pr-5 truncate"
                     >
-                      {endpoints.map((ep) => (
+                      {(endpoints || []).map((ep) => (
                         <option key={ep.id} value={ep.id}>{ep.name}</option>
                       ))}
                     </select>
@@ -425,7 +425,7 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                       onChange={(e) => handleImageModelChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs text-slate-800 pr-5 truncate"
                     >
-                      {activeEndpoint.models.map((m) => (
+                      {(activeEndpoint?.models || []).map((m) => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
@@ -563,7 +563,7 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                       onChange={(e) => handleEndpointChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-semibold text-pink-700 pr-5 truncate"
                     >
-                      {endpoints.map((ep) => (
+                      {(endpoints || []).map((ep) => (
                         <option key={ep.id} value={ep.id}>{ep.name}</option>
                       ))}
                     </select>
@@ -583,7 +583,7 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                       onChange={(e) => handleVisionModelChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-mono text-slate-800 pr-5 truncate"
                     >
-                      {activeEndpoint.models.map((m) => (
+                      {(activeEndpoint?.models || []).map((m) => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
@@ -740,7 +740,7 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                       onChange={(e) => handleEndpointChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-semibold text-pink-700 pr-5 truncate"
                     >
-                      {endpoints.map((ep) => (
+                      {(endpoints || []).map((ep) => (
                         <option key={ep.id} value={ep.id}>{ep.name}</option>
                       ))}
                     </select>
@@ -760,7 +760,7 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                       onChange={(e) => handleImageModelChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs text-slate-800 pr-5 truncate"
                     >
-                      {activeEndpoint.models.map((m) => (
+                      {(activeEndpoint?.models || []).map((m) => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
