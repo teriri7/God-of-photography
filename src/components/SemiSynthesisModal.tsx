@@ -55,16 +55,37 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
   // 当前步骤：1 = 场照除杂, 2 = 角色识别与道具设计, 3 = 最终布景成图
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  // 线路与模型配置
-  const [currentEndpointId, setCurrentEndpointId] = useState<string>(activeEndpointId);
-  const activeEndpoint = endpoints.find((ep) => ep.id === currentEndpointId) || endpoints[0];
-
-  const [selectedModel, setSelectedModel] = useState<string>(() => {
-    return activeEndpoint?.selectedModel || storageService.getLastImageModel() || activeEndpoint?.models[0] || '[yu]gemini-3.1-flash-lite-image';
+  // 步骤 1 (场照除杂) 独立 API 线路与生图模型配置与记忆
+  const [step1EndpointId, setStep1EndpointId] = useState<string>(() => {
+    return storageService.getSemiStep1EndpointId(activeEndpointId || endpoints[0]?.id || '');
+  });
+  const step1Endpoint = endpoints.find((ep) => ep.id === step1EndpointId) || endpoints[0];
+  const [step1Model, setStep1Model] = useState<string>(() => {
+    return storageService.getSemiStep1Model(
+      step1Endpoint?.selectedModel || step1Endpoint?.models?.[0] || '[yu]gemini-3.1-flash-lite-image'
+    );
   });
 
-  const [visionModel, setVisionModel] = useState<string>(() => {
-    return activeEndpoint?.selectedVisionModel || storageService.getLastVisionModel() || 'tsc1-gpt-5.6-sol';
+  // 步骤 2 (角色识别与布景顾问) 独立 API 线路与文本/视觉 LLM 模型配置与记忆
+  const [step2EndpointId, setStep2EndpointId] = useState<string>(() => {
+    return storageService.getSemiStep2EndpointId(activeEndpointId || endpoints[0]?.id || '');
+  });
+  const step2Endpoint = endpoints.find((ep) => ep.id === step2EndpointId) || endpoints[0];
+  const [step2VisionModel, setStep2VisionModel] = useState<string>(() => {
+    return storageService.getSemiStep2VisionModel(
+      step2Endpoint?.selectedVisionModel || 'tsc1-gpt-5.6-sol'
+    );
+  });
+
+  // 步骤 3 (最终落地布景成图) 独立 API 线路与生图模型配置与记忆
+  const [step3EndpointId, setStep3EndpointId] = useState<string>(() => {
+    return storageService.getSemiStep3EndpointId(activeEndpointId || endpoints[0]?.id || '');
+  });
+  const step3Endpoint = endpoints.find((ep) => ep.id === step3EndpointId) || endpoints[0];
+  const [step3Model, setStep3Model] = useState<string>(() => {
+    return storageService.getSemiStep3Model(
+      step3Endpoint?.selectedModel || step3Endpoint?.models?.[0] || '[yu]gemini-3.1-flash-lite-image'
+    );
   });
 
   // 画幅比例自适应与记忆
@@ -107,46 +128,60 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
     }
   }, [baseImage]);
 
-  // 同步外部线路变化
-  useEffect(() => {
-    if (activeEndpointId && activeEndpointId !== currentEndpointId) {
-      setCurrentEndpointId(activeEndpointId);
-    }
-  }, [activeEndpointId]);
-
   if (!isOpen) return null;
 
   // 获取当前正在处理的参考图（如果做完除杂则用除杂图，否则用原图）
   const activeWorkingImage = cleanedImage || baseImage;
 
-  // 线路与模型联动修改处理
-  const handleEndpointChange = (newId: string) => {
-    setCurrentEndpointId(newId);
-    onSelectEndpoint(newId);
+  // 步骤 1 线路与模型修改处理 (完全独立，不影响其他步骤与主页面)
+  const handleStep1EndpointChange = (newId: string) => {
+    setStep1EndpointId(newId);
+    storageService.saveSemiStep1EndpointId(newId);
     const target = endpoints.find((ep) => ep.id === newId);
     if (target) {
-      if (target.selectedModel) {
-        setSelectedModel(target.selectedModel);
-        storageService.saveLastImageModel(target.selectedModel);
-      } else if (target.models?.length) {
-        setSelectedModel(target.models[0]);
-        storageService.saveLastImageModel(target.models[0]);
-      }
-      if (target.selectedVisionModel) {
-        setVisionModel(target.selectedVisionModel);
-        storageService.saveLastVisionModel(target.selectedVisionModel);
-      }
+      const newModel = target.selectedModel || target.models?.[0] || '[yu]gemini-3.1-flash-lite-image';
+      setStep1Model(newModel);
+      storageService.saveSemiStep1Model(newModel);
     }
   };
 
-  const handleImageModelChange = (model: string) => {
-    setSelectedModel(model);
-    storageService.saveLastImageModel(model);
+  const handleStep1ModelChange = (model: string) => {
+    setStep1Model(model);
+    storageService.saveSemiStep1Model(model);
   };
 
-  const handleVisionModelChange = (model: string) => {
-    setVisionModel(model);
-    storageService.saveLastVisionModel(model);
+  // 步骤 2 线路与模型修改处理 (完全独立，不影响其他步骤与主页面)
+  const handleStep2EndpointChange = (newId: string) => {
+    setStep2EndpointId(newId);
+    storageService.saveSemiStep2EndpointId(newId);
+    const target = endpoints.find((ep) => ep.id === newId);
+    if (target) {
+      const newVision = target.selectedVisionModel || target.models?.find(m => m.includes('gpt') || m.includes('sol') || m.includes('gemini')) || target.models?.[0] || 'tsc1-gpt-5.6-sol';
+      setStep2VisionModel(newVision);
+      storageService.saveSemiStep2VisionModel(newVision);
+    }
+  };
+
+  const handleStep2VisionModelChange = (model: string) => {
+    setStep2VisionModel(model);
+    storageService.saveSemiStep2VisionModel(model);
+  };
+
+  // 步骤 3 线路与模型修改处理 (完全独立，不影响其他步骤与主页面)
+  const handleStep3EndpointChange = (newId: string) => {
+    setStep3EndpointId(newId);
+    storageService.saveSemiStep3EndpointId(newId);
+    const target = endpoints.find((ep) => ep.id === newId);
+    if (target) {
+      const newModel = target.selectedModel || target.models?.[0] || '[yu]gemini-3.1-flash-lite-image';
+      setStep3Model(newModel);
+      storageService.saveSemiStep3Model(newModel);
+    }
+  };
+
+  const handleStep3ModelChange = (model: string) => {
+    setStep3Model(model);
+    storageService.saveSemiStep3Model(model);
   };
 
   const handleResolutionChange = (res: ResolutionMode) => {
@@ -170,9 +205,9 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
     try {
       const { dimensionStr } = calculateDimensions(aspectRatio, resolutionMode);
       const res = await apiService.generateImageToImage({
-        baseUrl: activeEndpoint.baseUrl,
-        apiKey: activeEndpoint.apiKey,
-        model: selectedModel,
+        baseUrl: step1Endpoint.baseUrl,
+        apiKey: step1Endpoint.apiKey,
+        model: step1Model,
         prompt: DECLUTTER_PRESET.prompt,
         inputImageBase64: baseImage,
         resolution: `${resolutionMode} (${dimensionStr})`,
@@ -211,9 +246,9 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
 
     try {
       const rawResponse = await apiService.callVisionChat({
-        baseUrl: activeEndpoint.baseUrl,
-        apiKey: activeEndpoint.apiKey,
-        model: visionModel,
+        baseUrl: step2Endpoint.baseUrl,
+        apiKey: step2Endpoint.apiKey,
+        model: step2VisionModel,
         prompt: promptText,
         inputImageBase64: activeWorkingImage,
       });
@@ -295,9 +330,9 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
     try {
       const { dimensionStr } = calculateDimensions(aspectRatio, resolutionMode);
       const res = await apiService.generateImageToImage({
-        baseUrl: activeEndpoint.baseUrl,
-        apiKey: activeEndpoint.apiKey,
-        model: selectedModel,
+        baseUrl: step3Endpoint.baseUrl,
+        apiKey: step3Endpoint.apiKey,
+        model: step3Model,
         prompt: fullScenePrompt,
         inputImageBase64: activeWorkingImage,
         resolution: `${resolutionMode} (${dimensionStr})`,
@@ -402,8 +437,8 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                   </span>
                   <div className="relative flex-1 min-w-0">
                     <select
-                      value={currentEndpointId}
-                      onChange={(e) => handleEndpointChange(e.target.value)}
+                      value={step1EndpointId}
+                      onChange={(e) => handleStep1EndpointChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-semibold text-pink-700 pr-5 truncate"
                     >
                       {(endpoints || []).map((ep) => (
@@ -422,11 +457,11 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                   </span>
                   <div className="relative flex-1 min-w-0">
                     <select
-                      value={selectedModel}
-                      onChange={(e) => handleImageModelChange(e.target.value)}
+                      value={step1Model}
+                      onChange={(e) => handleStep1ModelChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs text-slate-800 pr-5 truncate"
                     >
-                      {(activeEndpoint?.models || []).map((m) => (
+                      {(step1Endpoint?.models || []).map((m) => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
@@ -560,8 +595,8 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                   </span>
                   <div className="relative flex-1 min-w-0">
                     <select
-                      value={currentEndpointId}
-                      onChange={(e) => handleEndpointChange(e.target.value)}
+                      value={step2EndpointId}
+                      onChange={(e) => handleStep2EndpointChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-semibold text-pink-700 pr-5 truncate"
                     >
                       {(endpoints || []).map((ep) => (
@@ -580,11 +615,18 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                   </span>
                   <div className="relative flex-1 min-w-0">
                     <select
-                      value={visionModel}
-                      onChange={(e) => handleVisionModelChange(e.target.value)}
+                      value={step2VisionModel}
+                      onChange={(e) => handleStep2VisionModelChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-mono text-slate-800 pr-5 truncate"
                     >
-                      {(activeEndpoint?.models || []).map((m) => (
+                      {Array.from(new Set([
+                        step2VisionModel,
+                        step2Endpoint?.selectedVisionModel,
+                        'tsc1-gpt-5.6-sol',
+                        'gpt-4o',
+                        'gemini-1.5-pro',
+                        ...(step2Endpoint?.models || [])
+                      ].filter(Boolean) as string[])).map((m) => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
@@ -737,8 +779,8 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                   </span>
                   <div className="relative flex-1 min-w-0">
                     <select
-                      value={currentEndpointId}
-                      onChange={(e) => handleEndpointChange(e.target.value)}
+                      value={step3EndpointId}
+                      onChange={(e) => handleStep3EndpointChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs font-semibold text-pink-700 pr-5 truncate"
                     >
                       {(endpoints || []).map((ep) => (
@@ -757,11 +799,11 @@ export const SemiSynthesisModal: React.FC<SemiSynthesisModalProps> = ({
                   </span>
                   <div className="relative flex-1 min-w-0">
                     <select
-                      value={selectedModel}
-                      onChange={(e) => handleImageModelChange(e.target.value)}
+                      value={step3Model}
+                      onChange={(e) => handleStep3ModelChange(e.target.value)}
                       className="w-full glass-input appearance-none px-2 py-1 rounded-xl text-xs text-slate-800 pr-5 truncate"
                     >
-                      {(activeEndpoint?.models || []).map((m) => (
+                      {(step3Endpoint?.models || []).map((m) => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>

@@ -323,5 +323,83 @@ export const storageService = {
     } catch (e) {
       console.error('Failed to save simulator mode:', e);
     }
+  },
+
+  // 半合成独立步骤 1 (除杂) API 与模型记忆
+  getSemiStep1EndpointId(defaultId: string): string {
+    try {
+      return localStorage.getItem('pinklayer_semi_step1_endpoint_id') || defaultId;
+    } catch {
+      return defaultId;
+    }
+  },
+  saveSemiStep1EndpointId(id: string): void {
+    try {
+      localStorage.setItem('pinklayer_semi_step1_endpoint_id', id);
+    } catch {}
+  },
+  getSemiStep1Model(defaultModel: string): string {
+    try {
+      return localStorage.getItem('pinklayer_semi_step1_model') || defaultModel;
+    } catch {
+      return defaultModel;
+    }
+  },
+  saveSemiStep1Model(model: string): void {
+    try {
+      localStorage.setItem('pinklayer_semi_step1_model', model);
+    } catch {}
+  },
+
+  // 半合成独立步骤 2 (角色识别与布景顾问) API 与文本/视觉模型记忆
+  getSemiStep2EndpointId(defaultId: string): string {
+    try {
+      return localStorage.getItem('pinklayer_semi_step2_endpoint_id') || defaultId;
+    } catch {
+      return defaultId;
+    }
+  },
+  saveSemiStep2EndpointId(id: string): void {
+    try {
+      localStorage.setItem('pinklayer_semi_step2_endpoint_id', id);
+    } catch {}
+  },
+  getSemiStep2VisionModel(defaultModel: string): string {
+    try {
+      return localStorage.getItem('pinklayer_semi_step2_model') || defaultModel;
+    } catch {
+      return defaultModel;
+    }
+  },
+  saveSemiStep2VisionModel(model: string): void {
+    try {
+      localStorage.setItem('pinklayer_semi_step2_model', model);
+    } catch {}
+  },
+
+  // 半合成独立步骤 3 (全写实布景生图) API 与生图模型记忆
+  getSemiStep3EndpointId(defaultId: string): string {
+    try {
+      return localStorage.getItem('pinklayer_semi_step3_endpoint_id') || defaultId;
+    } catch {
+      return defaultId;
+    }
+  },
+  saveSemiStep3EndpointId(id: string): void {
+    try {
+      localStorage.setItem('pinklayer_semi_step3_endpoint_id', id);
+    } catch {}
+  },
+  getSemiStep3Model(defaultModel: string): string {
+    try {
+      return localStorage.getItem('pinklayer_semi_step3_model') || defaultModel;
+    } catch {
+      return defaultModel;
+    }
+  },
+  saveSemiStep3Model(model: string): void {
+    try {
+      localStorage.setItem('pinklayer_semi_step3_model', model);
+    } catch {}
   }
 };
